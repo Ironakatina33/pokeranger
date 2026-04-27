@@ -1,0 +1,219 @@
+:root {
+  --shell-1: #1a1f2e;
+  --shell-2: #0d1320;
+  --shell-edge: #2a3147;
+  --screen-bg: #04111c;
+  --accent: #ffcc4d;
+  --accent-2: #ff7a59;
+  --mint: #8ef5d3;
+  --ink: #f4faff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: radial-gradient(circle at 20% 10%, #25304d 0%, transparent 55%),
+    radial-gradient(circle at 80% 80%, #1d3a4d 0%, transparent 50%),
+    linear-gradient(160deg, #060912 0%, #0c1326 100%);
+  font-family: "Outfit", "Segoe UI", sans-serif;
+  color: var(--ink);
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.game-frame {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  gap: 8px;
+}
+
+.screen-stack {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 18px 14px;
+  border-radius: 22px;
+  background: linear-gradient(180deg, var(--shell-1) 0%, var(--shell-2) 100%);
+  border: 2px solid var(--shell-edge);
+  box-shadow:
+    inset 0 1px 0 #ffffff1c,
+    inset 0 -2px 0 #00000060,
+    0 18px 40px #00000080;
+  width: min(92vw, calc((92vh - 90px) * 640 / 800));
+  max-width: 720px;
+}
+
+.screen-stack canvas {
+  display: block;
+  width: 100%;
+  aspect-ratio: 640 / 384;
+  background: var(--screen-bg);
+  border-radius: 8px;
+  border: 2px solid #000;
+  box-shadow:
+    inset 0 0 0 1px #1f3148,
+    inset 0 0 28px #00000099,
+    0 0 0 2px #ffffff10;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  touch-action: none;
+}
+
+#bottomCanvas {
+  cursor: crosshair;
+}
+
+.screen-divider {
+  height: 6px;
+  border-radius: 6px;
+  margin: -2px 24px;
+  background: linear-gradient(180deg, #00000088, #ffffff10);
+  box-shadow: inset 0 1px 0 #ffffff1a, inset 0 -1px 0 #00000080;
+}
+
+.bezel-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  margin-top: 6px;
+  padding: 0 8px;
+  font-family: "Press Start 2P", monospace;
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  color: #ffd97a;
+  text-shadow: 0 1px 0 #000;
+}
+
+.bezel-bottom .muted {
+  color: #80b3c8;
+}
+
+.legal-note {
+  position: fixed;
+  bottom: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 0 12px;
+  width: min(94vw, 760px);
+  text-align: center;
+  font-size: 11px;
+  color: #6a809a;
+  pointer-events: none;
+}
+
+.touch-overlay {
+  display: none;
+  position: fixed;
+  inset: auto 0 0 0;
+  padding: 12px 14px 22px;
+  pointer-events: none;
+  justify-content: space-between;
+  align-items: flex-end;
+  z-index: 5;
+}
+
+.touch-overlay > * {
+  pointer-events: auto;
+}
+
+.dpad {
+  position: relative;
+  width: 144px;
+  height: 144px;
+}
+
+.dpad button {
+  position: absolute;
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  border: 1px solid #ffffff33;
+  background: #1a2438cc;
+  color: #d6ecff;
+  font-size: 18px;
+  box-shadow: 0 4px 0 #00000088, inset 0 1px 0 #ffffff22;
+  backdrop-filter: blur(4px);
+}
+
+.dpad button[data-dir="up"] {
+  top: 0;
+  left: 49px;
+}
+.dpad button[data-dir="left"] {
+  top: 49px;
+  left: 0;
+}
+.dpad button[data-dir="right"] {
+  top: 49px;
+  right: 0;
+}
+.dpad button[data-dir="down"] {
+  bottom: 0;
+  left: 49px;
+}
+
+.dpad button:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 #00000088, inset 0 1px 0 #ffffff22;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.action-buttons button {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: 1px solid #ffffff33;
+  font-family: "Press Start 2P", monospace;
+  font-size: 14px;
+  color: #1a1a1a;
+  background: linear-gradient(180deg, #ffd866 0%, #f3a93a 100%);
+  box-shadow: 0 5px 0 #6e3d00, inset 0 1px 0 #ffffff80;
+}
+
+.action-buttons #btnB {
+  background: linear-gradient(180deg, #ff8896 0%, #d83d56 100%);
+  color: #fff;
+  box-shadow: 0 5px 0 #570012, inset 0 1px 0 #ffffff60;
+}
+
+.action-buttons button:active {
+  transform: translateY(2px);
+  box-shadow: 0 2px 0 #6e3d00, inset 0 1px 0 #ffffff80;
+}
+
+@media (hover: none) and (pointer: coarse), (max-width: 720px) {
+  .touch-overlay {
+    display: flex;
+  }
+  .legal-note {
+    display: none;
+  }
+  .game-frame {
+    justify-content: flex-start;
+    padding-top: 10px;
+  }
+  .screen-stack {
+    width: min(96vw, calc((92vh - 220px) * 640 / 800));
+    padding: 12px;
+  }
+}

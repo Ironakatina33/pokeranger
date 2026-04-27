@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nature Wardens — Loop of Tides</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&family=Outfit:wght@400;600;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="game-frame" id="gameFrame">
+    <div class="screen-stack">
+      <canvas id="topCanvas" width="640" height="384" aria-label="Ecran narratif"></canvas>
+      <div class="screen-divider"></div>
+      <canvas id="bottomCanvas" width="640" height="384" aria-label="Ecran d'action et capture"></canvas>
+    </div>
+
+    <div class="touch-overlay" id="touchOverlay">
+      <div class="dpad" id="dpad">
+        <button data-dir="up" aria-label="Haut">▲</button>
+        <button data-dir="left" aria-label="Gauche">◀</button>
+        <button data-dir="right" aria-label="Droite">▶</button>
+        <button data-dir="down" aria-label="Bas">▼</button>
+      </div>
+      <div class="action-buttons">
+        <button id="btnA" aria-label="Action A">A</button>
+        <button id="btnB" aria-label="Action B">B</button>
+      </div>
+    </div>
+
+    <div class="bezel-bottom">
+      <span>NATURE WARDENS</span>
+      <span class="muted">Loop of Tides</span>
+    </div>
+  </div>
+
+  <p class="legal-note">
+    Projet fan-made gratuit, hommage de gameplay. Univers, noms, personnages et creatures
+    originaux. Aucune marque, aucun sprite ni son officiels ne sont utilises.
+  </p>
+
+  <script src="game.js"></script>
+</body>
+</html>

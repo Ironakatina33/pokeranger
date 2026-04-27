@@ -30,6 +30,8 @@ Ouvre `index.html` dans un navigateur moderne. Aucune dépendance, aucun serveur
 - **Album Lumina** (collection) : 7 espèces à découvrir, chacune avec un **don de terrain** unique (éclairer, repousser, ondée, veilleuse, impulsion, pousse-roc, apaisement).
 - Mécanique de **lien temporaire** : tu traces une boucle pour apaiser une créature, elle t'aide, puis repart libre.
 - Foyers d'incendie à éteindre avec l'**Ondée** d'un Fjordle apaisé (mission 3).
+- **Obstacles de terrain** dans le hub : ronces, mare... À franchir en appelant la **bonne Lumina apaisée** (don de terrain). La créature apparaît, agit, puis repart libre.
+- **Sanctuaire Lumina** (nouveau monde accessible depuis le hub) : un habitat libre où toutes les créatures que tu as apaisées vivent, se baladent et s'observent. Marche vers l'est dans le hub pour y accéder.
 
 ## Contrôles
 

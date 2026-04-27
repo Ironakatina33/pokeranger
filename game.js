@@ -346,12 +346,25 @@ const MISSIONS = [
   }
 ];
 
+/* Obstacles franchissables avec un don de terrain (Lumina apaisee).
+   Chaque type associe l'espece dont la field move debloque le passage.
+   verbActive: phrase courte affichee dans la dialogue d'invocation. */
+const OBSTACLE_TYPES = {
+  rock:  { species: "pebbleon", label: "Rocher",       verb: "deplace le rocher",       w: 36, h: 30 },
+  bush:  { species: "mossnib",  label: "Ronces",       verb: "ecarte les ronces",       w: 38, h: 28 },
+  water: { species: "fjordle",  label: "Mare",         verb: "fait apparaitre des nenuphars", w: 56, h: 36 },
+  dark:  { species: "sparklit", label: "Passage sombre", verb: "eclaire le passage",   w: 40, h: 36 },
+  thorn: { species: "cindrop",  label: "Buisson sec",  verb: "embrase le buisson sec",  w: 36, h: 30 },
+  gear:  { species: "voltuff",  label: "Mecanisme",    verb: "rebranche le mecanisme",  w: 32, h: 36 },
+  spirit: { species: "glimmer", label: "Lumina sauvage", verb: "apaise la creature",    w: 36, h: 36 }
+};
+
 /* ---------- Etat global ---------- */
 const Game = {
   state: "title",
   t: 0,
   cameraShake: 0,
-  flags: { introDone: false, missionUnlocked: 0 },
+  flags: { introDone: false, missionUnlocked: 0, obstaclesCleared: {} },
   bondsTotal: 0,
   album: new Set(),
   albumSelected: 0,
@@ -360,6 +373,9 @@ const Game = {
   dialogue: null,
   missionResult: null,
   transition: null,
+  sanctuary: null,
+  summon: null,         // { obstacle, species, t, phase }
+  pickLumina: null,     // { obstacle, candidates, sel }
   // Ecran-titre
   titleMenu: "main",     // main | options | credits | confirmReset
   titleSelected: 0,
@@ -381,7 +397,8 @@ function saveGame() {
       missionUnlocked: Game.flags.missionUnlocked,
       bondsTotal: Game.bondsTotal,
       album: Array.from(Game.album),
-      childQuestDone: !!Game.flags.childQuestDone
+      childQuestDone: !!Game.flags.childQuestDone,
+      obstaclesCleared: Game.flags.obstaclesCleared || {}
     };
     localStorage.setItem(SAVE_KEY, JSON.stringify(data));
   } catch (e) {}
@@ -394,6 +411,7 @@ function loadGame() {
     Game.flags.introDone = !!d.introDone;
     Game.flags.missionUnlocked = d.missionUnlocked | 0;
     Game.flags.childQuestDone = !!d.childQuestDone;
+    Game.flags.obstaclesCleared = d.obstaclesCleared || {};
     Game.bondsTotal = d.bondsTotal | 0;
     Game.album = new Set(d.album || []);
     return true;
@@ -404,7 +422,7 @@ function hasSave() {
 }
 function resetSave() {
   try { localStorage.removeItem(SAVE_KEY); } catch (e) {}
-  Game.flags = { introDone: false, missionUnlocked: 0, childQuestDone: false };
+  Game.flags = { introDone: false, missionUnlocked: 0, childQuestDone: false, obstaclesCleared: {} };
   Game.album = new Set(); Game.bondsTotal = 0;
 }
 function saveOptions() {
@@ -494,25 +512,42 @@ function lerpEase(a, b, k) { const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k
 function buildHub() {
   const map = [];
   for (let y = 0; y < ROWS; y++) { const row = []; for (let x = 0; x < COLS; x++) row.push(0); map.push(row); }
+  // Bordures d'arbres avec une ouverture cote est (rangees 5-7) menant au sentier
   for (let x = 0; x < COLS; x++) { map[0][x] = 5; map[ROWS - 1][x] = 5; }
-  for (let y = 0; y < ROWS; y++) { map[y][0] = 5; map[y][COLS - 1] = 5; }
+  for (let y = 0; y < ROWS; y++) {
+    map[y][0] = 5;
+    if (y < 5 || y > 7) map[y][COLS - 1] = 5;
+  }
+  // Chemin de terre central horizontal pres du bas
   for (let x = 1; x < COLS - 1; x++) map[ROWS - 3][x] = 1;
+  // Chemin vertical (allee centrale)
   for (let y = 2; y < ROWS - 3; y++) map[y][10] = 1;
+  // Cabane warden (toit + base)
   for (let y = 3; y <= 5; y++) for (let x = 3; x <= 6; x++) map[y][x] = 7;
   for (let x = 3; x <= 6; x++) { map[2][x] = 8; map[3][x] = 8; }
   map[5][4] = 9; map[5][5] = 9;
-  for (let y = 1; y < ROWS - 1; y++) map[y][COLS - 3] = 3;
-  for (let y = 1; y < ROWS - 1; y++) map[y][COLS - 4] = 4;
-  const decor = [[2, 12], [3, 13], [4, 11], [8, 7], [8, 15], [9, 3], [9, 15], [7, 12], [6, 12]];
+  // Riviere / pont (decales pour laisser le sentier est libre)
+  for (let y = 1; y < ROWS - 1; y++) map[y][13] = 3;
+  for (let y = 1; y < ROWS - 1; y++) map[y][12] = 4;
+  // Le pont praticable (rangee 6)
+  map[6][12] = 1; map[6][13] = 1;
+  // Decor floral
+  const decor = [[2, 12], [3, 13], [4, 11], [8, 7], [9, 3], [7, 12]];
   for (const d of decor) if (map[d[0]][d[1]] === 0) map[d[0]][d[1]] = 11;
-  const stones = [[6, 15], [7, 15], [5, 15]];
+  // Quelques cailloux
+  const stones = [[3, 16], [9, 18]];
   for (const s of stones) if (map[s[0]][s[1]] === 0) map[s[0]][s[1]] = 10;
 
   const npcs = [
     { id: "reva", x: 4 * TILE + 16, y: 6 * TILE + 16, dir: "down", spriteKey: "reva",
-      lines: () => Game.flags.missionUnlocked >= MISSIONS.length
-        ? [{ speaker: "reva", text: "Tu as fait l'archipel fier, cadet." }]
-        : [{ speaker: "reva", text: "Va parler a Tomo pour lancer la mission suivante." }] },
+      lines: () => {
+        const sanctuaryHint = { speaker: "reva", text: "A l'est, un sentier mene au Sanctuaire. Mais il est barre. Tes amies Lumina sauront t'aider a degager la voie." };
+        if (Game.flags.missionUnlocked >= MISSIONS.length)
+          return [{ speaker: "reva", text: "Tu as fait l'archipel fier, cadet." }, sanctuaryHint];
+        if (Game.album.size > 0)
+          return [{ speaker: "reva", text: "Va parler a Tomo pour la mission suivante." }, sanctuaryHint];
+        return [{ speaker: "reva", text: "Va parler a Tomo pour lancer la mission suivante." }];
+      } },
     { id: "tomo", x: 11 * TILE + 16, y: (ROWS - 4) * TILE + 16, dir: "down", spriteKey: "tomo",
       lines: () => {
         const idx = Game.flags.missionUnlocked;
@@ -556,7 +591,27 @@ function buildHub() {
       ] }
   ];
 
-  Game.hub = { map, npcs, player: { x: 10 * TILE + 16, y: (ROWS - 4) * TILE + 16, dir: "down", anim: 0 } };
+  /* Obstacles franchissables avec un don de terrain - sur le sentier est.
+     Le premier (Ronces) se debloque apres m1 (Mossnib).
+     Le second (Mare) se debloque apres m2 (Fjordle). */
+  const obstacleDefs = [
+    { id: "h_bush",  type: "bush",  x: 15 * TILE + 16, y: 6 * TILE + 16 },
+    { id: "h_water", type: "water", x: 17 * TILE + 16, y: 6 * TILE + 16 }
+  ];
+  const obstacles = [];
+  for (const od of obstacleDefs) {
+    if (Game.flags.obstaclesCleared && Game.flags.obstaclesCleared[od.id]) continue;
+    const t = OBSTACLE_TYPES[od.type];
+    obstacles.push({ id: od.id, type: od.type, x: od.x, y: od.y, w: t.w, h: t.h, anim: 0 });
+  }
+
+  /* Portail vers le sanctuaire (au-dela des obstacles) */
+  const portal = { x: 18 * TILE + 16, y: 6 * TILE + 16, anim: 0 };
+
+  Game.hub = {
+    map, npcs, obstacles, portal,
+    player: { x: 10 * TILE + 16, y: (ROWS - 4) * TILE + 16, dir: "down", anim: 0 }
+  };
 }
 
 function tileSolid(t) { return t === 5 || t === 6 || t === 7 || t === 8 || t === 3 || t === 10; }
@@ -668,6 +723,172 @@ function drawTile(c, t, x, y) {
   }
 }
 
+/* ---------- Obstacles & portail ---------- */
+function drawObstacle(c, ob, t) {
+  const x = ob.x, y = ob.y;
+  // Indicateur "interactible"  : icone de la creature requise au-dessus
+  c.save();
+  switch (ob.type) {
+    case "rock": {
+      // gros rocher gris
+      c.fillStyle = "rgba(0,0,0,0.32)";
+      c.beginPath(); c.ellipse(x, y + 14, 22, 5, 0, 0, Math.PI * 2); c.fill();
+      c.fillStyle = "#7e6a4d";
+      c.beginPath(); c.ellipse(x, y, 20, 16, 0, 0, Math.PI * 2); c.fill();
+      c.fillStyle = "#a89377";
+      c.beginPath(); c.ellipse(x - 3, y - 4, 14, 10, 0, 0, Math.PI * 2); c.fill();
+      c.fillStyle = "#dac8a3";
+      c.beginPath(); c.arc(x - 6, y - 8, 4, 0, Math.PI * 2); c.fill();
+      c.strokeStyle = "#4d3920"; c.lineWidth = 1.4;
+      c.beginPath(); c.ellipse(x, y, 20, 16, 0, 0, Math.PI * 2); c.stroke();
+      // craquelure
+      c.beginPath(); c.moveTo(x + 4, y - 4); c.lineTo(x + 10, y + 4); c.stroke();
+      break;
+    }
+    case "bush": {
+      // ronces - boules vertes avec epines rouges
+      c.fillStyle = "rgba(0,0,0,0.32)";
+      c.beginPath(); c.ellipse(x, y + 14, 22, 5, 0, 0, Math.PI * 2); c.fill();
+      c.fillStyle = "#3e9b2a";
+      c.beginPath(); c.arc(x - 6, y, 12, 0, Math.PI * 2); c.fill();
+      c.beginPath(); c.arc(x + 6, y - 2, 13, 0, Math.PI * 2); c.fill();
+      c.beginPath(); c.arc(x, y + 4, 10, 0, Math.PI * 2); c.fill();
+      c.fillStyle = "#5fbe3a";
+      c.beginPath(); c.arc(x - 3, y - 4, 7, 0, Math.PI * 2); c.fill();
+      c.beginPath(); c.arc(x + 8, y - 6, 5, 0, Math.PI * 2); c.fill();
+      // epines
+      c.strokeStyle = "#8a1f1f"; c.lineWidth = 1.5; c.lineCap = "round";
+      for (let i = 0; i < 6; i++) {
+        const a = i * (Math.PI * 2 / 6);
+        const ex = x + Math.cos(a) * 12, ey = y + Math.sin(a) * 9;
+        c.beginPath(); c.moveTo(ex, ey); c.lineTo(ex + Math.cos(a) * 4, ey + Math.sin(a) * 4); c.stroke();
+      }
+      // petits fruits rouges
+      c.fillStyle = "#d04040";
+      c.beginPath(); c.arc(x - 4, y, 1.6, 0, Math.PI * 2); c.fill();
+      c.beginPath(); c.arc(x + 6, y + 2, 1.6, 0, Math.PI * 2); c.fill();
+      break;
+    }
+    case "water": {
+      c.fillStyle = "#274f8a";
+      c.beginPath(); c.ellipse(x, y, 28, 16, 0, 0, Math.PI * 2); c.fill();
+      c.fillStyle = "#3a78b8";
+      c.beginPath(); c.ellipse(x, y - 2, 24, 12, 0, 0, Math.PI * 2); c.fill();
+      c.strokeStyle = "#a8d4ff"; c.lineWidth = 1;
+      for (let i = 0; i < 3; i++) {
+        const off = Math.sin(t * 1.4 + i) * 3;
+        c.beginPath(); c.moveTo(x - 12 + off, y - 4 + i * 3); c.lineTo(x + 12 + off, y - 4 + i * 3); c.stroke();
+      }
+      break;
+    }
+    case "thorn": {
+      c.fillStyle = "#7e3a1f";
+      c.beginPath(); c.ellipse(x, y, 18, 12, 0, 0, Math.PI * 2); c.fill();
+      c.strokeStyle = "#5a1c12"; c.lineWidth = 1.4;
+      for (let i = 0; i < 7; i++) {
+        const a = i * (Math.PI / 4);
+        c.beginPath(); c.moveTo(x, y); c.lineTo(x + Math.cos(a) * 14, y + Math.sin(a) * 10); c.stroke();
+      }
+      c.fillStyle = "#caa977";
+      c.beginPath(); c.arc(x - 3, y - 1, 3, 0, Math.PI * 2); c.fill();
+      break;
+    }
+    case "dark": {
+      c.fillStyle = "rgba(20,12,30,0.85)";
+      c.beginPath(); c.ellipse(x, y, 22, 18, 0, 0, Math.PI * 2); c.fill();
+      c.fillStyle = "rgba(10,5,20,0.95)";
+      c.beginPath(); c.arc(x, y, 11, 0, Math.PI * 2); c.fill();
+      c.fillStyle = "#5a4a3a";
+      for (let i = -1; i <= 1; i++) {
+        c.fillRect(x + i * 6 - 1, y - 8, 2, 6);
+      }
+      break;
+    }
+    case "gear": {
+      c.fillStyle = "#7e6a4d";
+      c.fillRect(x - 12, y + 4, 24, 6);
+      c.fillStyle = "#a89377";
+      for (let i = 0; i < 8; i++) {
+        const a = i * (Math.PI / 4) + Math.sin(t) * 0.05;
+        c.fillRect(x + Math.cos(a) * 10 - 2, y + Math.sin(a) * 10 - 2, 4, 4);
+      }
+      c.fillStyle = "#5e3a1f";
+      c.beginPath(); c.arc(x, y, 8, 0, Math.PI * 2); c.fill();
+      c.fillStyle = "#a89377";
+      c.beginPath(); c.arc(x, y, 4, 0, Math.PI * 2); c.fill();
+      break;
+    }
+    case "spirit": {
+      c.fillStyle = "rgba(212,155,255,0.4)";
+      c.beginPath(); c.arc(x, y, 16, 0, Math.PI * 2); c.fill();
+      c.fillStyle = "#d49bff";
+      c.beginPath(); c.arc(x, y, 8, 0, Math.PI * 2); c.fill();
+      c.fillStyle = "#fff";
+      c.beginPath(); c.arc(x - 2, y - 2, 2, 0, Math.PI * 2); c.fill();
+      break;
+    }
+  }
+  c.restore();
+}
+
+function drawObstacleHint(c, ob, sp, near) {
+  // Bulle au-dessus de l'obstacle avec icone de l'espece requise
+  const x = ob.x, y = ob.y - 22;
+  if (near) {
+    // halo
+    c.fillStyle = "rgba(255,216,102,0.18)";
+    c.beginPath(); c.arc(ob.x, ob.y, 22 + Math.sin(Game.t * 4) * 1.5, 0, Math.PI * 2); c.fill();
+  }
+  // bulle
+  c.fillStyle = "#0d2236d8";
+  rrect(c, x - 18, y - 12, 36, 18, 5); c.fill();
+  c.strokeStyle = "#ffd866"; c.lineWidth = 1;
+  rrect(c, x - 18, y - 12, 36, 18, 5); c.stroke();
+  // mini sprite de la creature requise
+  c.save(); c.translate(x - 7, y - 1); c.scale(0.55, 0.55);
+  drawCreature(c, sp, 0, 0, Game.t * 1.5, 0, false, false);
+  c.restore();
+  // petite fleche
+  c.fillStyle = "#ffd866";
+  c.font = "9px 'Press Start 2P', monospace"; c.textAlign = "left";
+  c.fillText(near ? "A" : "?", x + 4, y + 3);
+}
+
+function drawPortal(c, p, t) {
+  // Stele de pierre encadrant un portail lumineux
+  // socle
+  c.fillStyle = "rgba(0,0,0,0.32)";
+  c.beginPath(); c.ellipse(p.x, p.y + 16, 22, 5, 0, 0, Math.PI * 2); c.fill();
+  // colonnes
+  c.fillStyle = "#7e6a4d";
+  c.fillRect(p.x - 16, p.y - 14, 6, 30);
+  c.fillRect(p.x + 10, p.y - 14, 6, 30);
+  c.fillStyle = "#a89377";
+  c.fillRect(p.x - 16, p.y - 16, 6, 4);
+  c.fillRect(p.x + 10, p.y - 16, 6, 4);
+  // linteau
+  c.fillStyle = "#7e6a4d";
+  c.fillRect(p.x - 18, p.y - 18, 36, 6);
+  // glyphe
+  c.fillStyle = "#ffd866";
+  c.beginPath(); c.arc(p.x, p.y - 15, 2, 0, Math.PI * 2); c.fill();
+  // halo lumineux qui pulse
+  const pulse = 0.5 + 0.5 * Math.sin(t * 3);
+  const grad = c.createRadialGradient(p.x, p.y, 4, p.x, p.y, 18);
+  grad.addColorStop(0, "rgba(255,236,160," + (0.7 + pulse * 0.3).toFixed(2) + ")");
+  grad.addColorStop(0.7, "rgba(212,155,255,0.4)");
+  grad.addColorStop(1, "rgba(212,155,255,0)");
+  c.fillStyle = grad;
+  c.beginPath(); c.ellipse(p.x, p.y - 2, 12, 16, 0, 0, Math.PI * 2); c.fill();
+  // particules
+  for (let i = 0; i < 4; i++) {
+    const ph = (t * 1.5 + i * 0.7) % 1;
+    const py = p.y + 6 - ph * 22;
+    c.fillStyle = "rgba(255,255,255," + (1 - ph).toFixed(2) + ")";
+    c.fillRect(p.x - 4 + (i * 3) - 4, py | 0, 1, 1);
+  }
+}
+
 /* Panneau d'affichage Warden */
 function drawNoticeBoard(c, cx, cy) {
   // ombre
@@ -695,34 +916,46 @@ function drawHuman(c, charKey, cx, cy, dir, anim) {
   const ch = CHARACTERS[charKey] || CHARACTERS.player;
   const step = Math.floor(anim) % 4;
   const bob = step === 1 ? -1 : step === 3 ? 1 : 0;
+  const isPlayer = charKey === "player";
+
   // ombre ronde sous le perso
-  c.fillStyle = "rgba(0,0,0,0.32)";
+  c.fillStyle = "rgba(0,0,0,0.34)";
   c.beginPath(); c.ellipse(cx, cy + 14, 10, 3, 0, 0, Math.PI * 2); c.fill();
 
-  // jambes (4-5 px)
+  /* JAMBES */
   const legY = cy + 8 + bob;
-  const legSwingL = step === 1 ? -1 : 0;
-  const legSwingR = step === 3 ? -1 : 0;
-  if (dir === "up") {
-    px(c, cx - 4, legY + legSwingL, 3, 5, ch.colorB);
-    px(c, cx + 1, legY + legSwingR, 3, 5, ch.colorB);
-  } else if (dir === "down") {
-    px(c, cx - 4, legY + legSwingL, 3, 5, ch.colorB);
-    px(c, cx + 1, legY + legSwingR, 3, 5, ch.colorB);
-  } else {
-    px(c, cx - 3, legY, 6, 5, ch.colorB);
-  }
+  const legL = step === 1 ? -1 : step === 3 ? 0 : 0;
+  const legR = step === 3 ? -1 : step === 1 ? 0 : 0;
+  // pantalon
+  px(c, cx - 4, legY + legL, 3, 5, ch.colorB);
+  px(c, cx + 1, legY + legR, 3, 5, ch.colorB);
+  // ourlet plus clair
+  px(c, cx - 4, legY + 4 + legL, 3, 1, "#3b6e7b");
+  px(c, cx + 1, legY + 4 + legR, 3, 1, "#3b6e7b");
   // chaussures
-  px(c, cx - 4, legY + 5, 3, 1, "#1a1a1a");
-  px(c, cx + 1, legY + 5, 3, 1, "#1a1a1a");
+  px(c, cx - 4, legY + 5 + legL, 3, 1, "#1a1a1a");
+  px(c, cx + 1, legY + 5 + legR, 3, 1, "#1a1a1a");
 
-  // corps (6-7 px haut, 10 px large) - uniforme rouge/orange ou couleur perso
+  /* CORPS / VESTE */
   const bodyY = cy + 1 + bob;
+  // base orange
   px(c, cx - 5, bodyY, 11, 8, ch.colorA);
-  // bande blanche / accent jaune (gilet warden)
-  px(c, cx - 5, bodyY + 2, 11, 1, "#ffffff");
-  px(c, cx - 5, bodyY + 6, 11, 1, "#ffd866");
-  // bras
+  // ombre cote (volume)
+  px(c, cx + 4, bodyY, 1, 8, "rgba(0,0,0,0.18)");
+  // col blanc
+  px(c, cx - 4, bodyY, 9, 1, "#ffffff");
+  // ceinture marron
+  px(c, cx - 5, bodyY + 6, 11, 1, "#3a2718");
+  px(c, cx - 1, bodyY + 6, 2, 1, "#ffd866"); // boucle
+  // bande verticale jaune (zip)
+  px(c, cx, bodyY + 1, 1, 5, "#ffd866");
+  // logo Warden (feuille jaune ronde) sur le buste si player et dir=down
+  if (isPlayer && dir === "down") {
+    px(c, cx - 3, bodyY + 3, 2, 2, "#ffd866");
+    px(c, cx - 2, bodyY + 3, 1, 1, "#fff5b8");
+  }
+
+  /* BRAS */
   if (dir === "left") {
     px(c, cx - 6, bodyY + 1, 2, 5, ch.colorA);
     px(c, cx - 6, bodyY + 5, 2, 1, ch.skin);
@@ -730,23 +963,26 @@ function drawHuman(c, charKey, cx, cy, dir, anim) {
     px(c, cx + 5, bodyY + 1, 2, 5, ch.colorA);
     px(c, cx + 5, bodyY + 5, 2, 1, ch.skin);
   } else {
-    px(c, cx - 6, bodyY + 1, 1, 6, ch.colorA);
-    px(c, cx + 6, bodyY + 1, 1, 6, ch.colorA);
+    px(c, cx - 6, bodyY + 1, 1, 5, ch.colorA);
+    px(c, cx + 6, bodyY + 1, 1, 5, ch.colorA);
+    // mains
+    px(c, cx - 6, bodyY + 6, 1, 1, ch.skin);
+    px(c, cx + 6, bodyY + 6, 1, 1, ch.skin);
   }
 
-  // tete (tres grosse: 14x12)
+  /* TETE */
   const headY = cy - 13 + bob;
-  // nuque
-  px(c, cx - 4, headY + 11, 9, 1, ch.skin);
   // visage
   px(c, cx - 6, headY + 2, 13, 9, ch.skin);
   px(c, cx - 5, headY + 1, 11, 1, ch.skin);
   px(c, cx - 5, headY + 10, 11, 1, ch.skin);
-  // ombre joue
-  px(c, cx - 6, headY + 8, 1, 2, "rgba(0,0,0,0.15)");
-  px(c, cx + 6, headY + 8, 1, 2, "rgba(0,0,0,0.15)");
+  // joues (petit rouge)
+  px(c, cx - 5, headY + 8, 2, 1, "rgba(255,140,140,0.45)");
+  px(c, cx + 4, headY + 8, 2, 1, "rgba(255,140,140,0.45)");
+  // ombrage du menton (cou)
+  px(c, cx - 3, headY + 11, 7, 1, "rgba(0,0,0,0.12)");
 
-  // cheveux (couvre haut + cotes)
+  /* CHEVEUX */
   if (dir === "up") {
     px(c, cx - 6, headY, 13, 7, ch.hair);
     px(c, cx - 7, headY + 2, 1, 4, ch.hair);
@@ -755,145 +991,549 @@ function drawHuman(c, charKey, cx, cy, dir, anim) {
     px(c, cx - 6, headY, 13, 4, ch.hair);
     px(c, cx - 7, headY + 1, 1, 5, ch.hair);
     px(c, cx + 7, headY + 1, 1, 5, ch.hair);
-    // mecheux frontaux
-    px(c, cx - 5, headY + 4, 3, 1, ch.hair);
-    px(c, cx + 3, headY + 4, 3, 1, ch.hair);
-    // touche brillance
-    px(c, cx - 3, headY + 1, 4, 1, "rgba(255,255,255,0.25)");
+    // meche frontale
+    if (dir === "down") {
+      px(c, cx - 5, headY + 4, 3, 1, ch.hair);
+      px(c, cx + 3, headY + 4, 3, 1, ch.hair);
+    } else if (dir === "left") {
+      px(c, cx - 5, headY + 4, 5, 1, ch.hair);
+    } else if (dir === "right") {
+      px(c, cx + 1, headY + 4, 5, 1, ch.hair);
+    }
+    // brillance
+    px(c, cx - 3, headY + 1, 4, 1, "rgba(255,255,255,0.3)");
   }
 
-  // yeux selon direction (gros yeux ronds anime)
+  /* CASQUETTE / BANDEAU si Player (chibi ranger feel) */
+  if (isPlayer) {
+    if (dir === "up") {
+      // visiere arriere
+      px(c, cx - 7, headY + 1, 15, 1, ch.colorA);
+    } else {
+      // bandeau orange avec logo
+      px(c, cx - 7, headY + 1, 15, 2, ch.colorA);
+      px(c, cx - 7, headY + 1, 15, 1, "#a83a1f"); // ombre haut
+      // logo feuille au centre
+      if (dir === "down") {
+        px(c, cx - 1, headY + 1, 2, 1, "#ffd866");
+        px(c, cx, headY + 2, 1, 1, "#ffd866");
+      }
+      // visiere
+      px(c, cx - 7, headY + 3, 4, 1, ch.colorA);
+      px(c, cx + 4, headY + 3, 4, 1, ch.colorA);
+    }
+  }
+
+  /* YEUX */
   if (dir === "down") {
-    // base blanche
     px(c, cx - 4, headY + 6, 3, 3, "#ffffff");
     px(c, cx + 2, headY + 6, 3, 3, "#ffffff");
-    // pupilles
     px(c, cx - 3, headY + 7, 2, 2, "#1a1f3a");
     px(c, cx + 3, headY + 7, 2, 2, "#1a1f3a");
-    // brillance
-    px(c, cx - 2, headY + 7, 1, 1, "#ffffff");
-    px(c, cx + 4, headY + 7, 1, 1, "#ffffff");
-    // bouche
-    px(c, cx - 1, headY + 9, 2, 1, "#7c3a2b");
+    px(c, cx - 2, headY + 6, 1, 1, "#ffffff");
+    px(c, cx + 4, headY + 6, 1, 1, "#ffffff");
+    // bouche douce
+    px(c, cx, headY + 9, 1, 1, "#7c3a2b");
   } else if (dir === "left") {
     px(c, cx - 5, headY + 6, 3, 3, "#ffffff");
     px(c, cx - 4, headY + 7, 2, 2, "#1a1f3a");
-    px(c, cx - 3, headY + 7, 1, 1, "#ffffff");
+    px(c, cx - 3, headY + 6, 1, 1, "#ffffff");
+    px(c, cx - 5, headY + 9, 2, 1, "#7c3a2b");
   } else if (dir === "right") {
     px(c, cx + 2, headY + 6, 3, 3, "#ffffff");
     px(c, cx + 3, headY + 7, 2, 2, "#1a1f3a");
-    px(c, cx + 4, headY + 7, 1, 1, "#ffffff");
-  } else {
-    // up: petite touche dans les cheveux
+    px(c, cx + 4, headY + 6, 1, 1, "#ffffff");
+    px(c, cx + 3, headY + 9, 2, 1, "#7c3a2b");
   }
+}
+
+/* Petits helpers de rendu creature */
+function softShadow(c, w, h) {
+  c.fillStyle = "rgba(0,0,0,0.32)";
+  c.beginPath(); c.ellipse(0, h, w, h * 0.35, 0, 0, Math.PI * 2); c.fill();
+}
+function eyesPair(c, x1, x2, y, r, blinking, lookSide) {
+  if (blinking) {
+    c.strokeStyle = "#1a1a1a"; c.lineWidth = 1.4; c.lineCap = "round";
+    c.beginPath(); c.moveTo(x1 - r, y); c.lineTo(x1 + r, y); c.stroke();
+    c.beginPath(); c.moveTo(x2 - r, y); c.lineTo(x2 + r, y); c.stroke();
+    return;
+  }
+  // blanc
+  c.fillStyle = "#ffffff";
+  c.beginPath(); c.arc(x1, y, r, 0, Math.PI * 2); c.fill();
+  c.beginPath(); c.arc(x2, y, r, 0, Math.PI * 2); c.fill();
+  // pupille (peut regarder de cote)
+  const px = (lookSide || 0) * (r * 0.4);
+  c.fillStyle = "#1a1f3a";
+  c.beginPath(); c.arc(x1 + px, y + 0.5, r * 0.65, 0, Math.PI * 2); c.fill();
+  c.beginPath(); c.arc(x2 + px, y + 0.5, r * 0.65, 0, Math.PI * 2); c.fill();
+  // brillance
+  c.fillStyle = "#ffffff";
+  c.beginPath(); c.arc(x1 + px - r * 0.25, y - r * 0.35, r * 0.25, 0, Math.PI * 2); c.fill();
+  c.beginPath(); c.arc(x2 + px - r * 0.25, y - r * 0.35, r * 0.25, 0, Math.PI * 2); c.fill();
 }
 
 function drawCreature(c, sp, cx, cy, anim, hitFlash, dashing, captured) {
   const r = sp.radius;
-  const wob = Math.sin(anim * 6) * 1.2;
-  // respiration : leger squash/stretch
-  const breath = Math.sin(anim * 2.5) * 0.04;
-  const sx = 1 - breath, sy = 1 + breath;
-  // queue/oreille twitch (rare et discret)
-  const earTw = Math.sin(anim * 2.0) * 0.18 + Math.sin(anim * 11) * 0.05;
-  // clignement: ~5% du temps, eyes deviennent une ligne
+  const wob = Math.sin(anim * 4) * 1.0;
+  const breath = 1 + Math.sin(anim * 2.5) * 0.05;
   const blinkPhase = (cx * 0.013 + cy * 0.017);
-  const blinking = ((anim * 0.45 + blinkPhase) % 3.5) < 0.12;
+  const blinking = ((anim * 0.45 + blinkPhase) % 4) < 0.12;
+  const lookSide = Math.sin(anim * 0.7 + blinkPhase * 5) > 0.92 ? 1 : Math.sin(anim * 0.7 + blinkPhase * 5) < -0.92 ? -1 : 0;
 
   c.save(); c.translate(cx, cy + wob);
   if (captured) c.globalAlpha = clamp(1 - anim, 0, 1);
-  // ombre
-  c.fillStyle = "#00000050"; c.beginPath();
-  c.ellipse(0, r + 4, r * 0.9 * sx, r * 0.35, 0, 0, Math.PI * 2); c.fill();
-  if (hitFlash > 0) { c.fillStyle = "#ffffff"; c.beginPath(); c.arc(0, 0, r + 4 + hitFlash * 6, 0, Math.PI * 2); c.fill(); }
-  if (dashing) { c.strokeStyle = sp.accent + "cc"; c.lineWidth = 2; c.beginPath(); c.arc(0, 0, r + 5, 0, Math.PI * 2); c.stroke(); }
+  softShadow(c, r * 0.95, r + 5);
 
-  // corps (avec respiration)
-  c.save(); c.scale(sx, sy);
-  c.fillStyle = sp.body; c.beginPath(); c.ellipse(0, 0, r, r * 0.92, 0, 0, Math.PI * 2); c.fill();
-  c.fillStyle = sp.accent; c.beginPath(); c.ellipse(0, r * 0.25, r * 0.7, r * 0.55, 0, 0, Math.PI * 2); c.fill();
-  c.strokeStyle = sp.dark; c.lineWidth = 1.5; c.beginPath(); c.ellipse(0, 0, r, r * 0.92, 0, 0, Math.PI * 2); c.stroke();
+  if (hitFlash > 0) {
+    c.fillStyle = "rgba(255,255,255," + (0.6 * hitFlash).toFixed(2) + ")";
+    c.beginPath(); c.arc(0, 0, r + 5 + hitFlash * 6, 0, Math.PI * 2); c.fill();
+  }
+  if (dashing) {
+    c.strokeStyle = sp.accent;
+    c.lineWidth = 2; c.setLineDash([4, 3]); c.lineDashOffset = -anim * 14;
+    c.beginPath(); c.arc(0, 0, r + 6, 0, Math.PI * 2); c.stroke();
+    c.setLineDash([]);
+  }
+
+  c.save(); c.scale(1 / breath, breath);
+  switch (sp.id) {
+    case "sparklit": drawSparklit(c, sp, r, anim, blinking, lookSide); break;
+    case "mossnib": drawMossnib(c, sp, r, anim, blinking, lookSide); break;
+    case "fjordle": drawFjordle(c, sp, r, anim, blinking, lookSide); break;
+    case "cindrop": drawCindrop(c, sp, r, anim, blinking, lookSide); break;
+    case "voltuff": drawVoltuff(c, sp, r, anim, blinking, lookSide); break;
+    case "pebbleon": drawPebbleon(c, sp, r, anim, blinking, lookSide); break;
+    case "glimmer": drawGlimmer(c, sp, r, anim, blinking, lookSide); break;
+    default: drawGenericCreature(c, sp, r, anim, blinking, lookSide); break;
+  }
   c.restore();
+  c.restore();
+}
 
+/* Sparklit : renard d'orage. Corps rond jaune, oreilles triangulaires, masque
+   sombre autour des yeux, queue en zigzag d'eclair. */
+function drawSparklit(c, sp, r, anim, blinking, lookSide) {
+  const earTw = Math.sin(anim * 6) * 0.25;
+  // Queue eclair (zigzag) qui flicker
+  c.save(); c.translate(r * 0.7, -r * 0.05); c.rotate(Math.sin(anim * 4) * 0.2);
+  c.fillStyle = sp.body; c.strokeStyle = sp.dark; c.lineWidth = 1.2; c.lineJoin = "miter";
+  c.beginPath();
+  c.moveTo(0, -r * 0.2);
+  c.lineTo(r * 0.55, -r * 0.55);
+  c.lineTo(r * 0.3, -r * 0.35);
+  c.lineTo(r * 0.85, -r * 0.7);
+  c.lineTo(r * 0.55, -r * 0.05);
+  c.lineTo(r * 0.2, r * 0.25);
+  c.closePath(); c.fill(); c.stroke();
+  // Pointe lumineuse
+  c.fillStyle = "#fff5b8";
+  c.beginPath(); c.arc(r * 0.85, -r * 0.7, 1.6, 0, Math.PI * 2); c.fill();
+  c.restore();
+  // Corps : ovale large
+  c.fillStyle = sp.body;
+  c.beginPath(); c.ellipse(0, r * 0.05, r, r * 0.95, 0, 0, Math.PI * 2); c.fill();
+  // Ventre clair
+  c.fillStyle = sp.accent;
+  c.beginPath(); c.ellipse(0, r * 0.35, r * 0.6, r * 0.5, 0, 0, Math.PI * 2); c.fill();
+  // Outline
+  c.strokeStyle = sp.dark; c.lineWidth = 1.4;
+  c.beginPath(); c.ellipse(0, r * 0.05, r, r * 0.95, 0, 0, Math.PI * 2); c.stroke();
+  // Pattes courtes
+  c.fillStyle = sp.dark;
+  c.fillRect(-r * 0.55 | 0, (r * 0.85) | 0, 3, 3);
+  c.fillRect((r * 0.4) | 0, (r * 0.85) | 0, 3, 3);
+  // Oreilles triangulaires (twitch)
   c.fillStyle = sp.body; c.strokeStyle = sp.dark;
-  if (sp.id === "sparklit" || sp.id === "voltuff") {
-    // oreilles qui twitchent legerement
-    c.save(); c.translate(-r * 0.35, -r * 0.9); c.rotate(-earTw * 0.4);
-    c.beginPath(); c.moveTo(-r * 0.3, r * 0.3); c.lineTo(0, -r * 0.55); c.lineTo(r * 0.25, r * 0.3); c.closePath(); c.fill(); c.stroke();
-    c.restore();
-    c.save(); c.translate(r * 0.35, -r * 0.9); c.rotate(earTw * 0.4);
-    c.beginPath(); c.moveTo(-r * 0.25, r * 0.3); c.lineTo(0, -r * 0.55); c.lineTo(r * 0.3, r * 0.3); c.closePath(); c.fill(); c.stroke();
-    c.restore();
-    // petite queue qui flotte
-    c.save(); c.translate(r * 0.85, r * 0.1); c.rotate(Math.sin(anim * 3.5) * 0.4);
-    c.beginPath(); c.moveTo(0, 0); c.lineTo(r * 0.6, -r * 0.4); c.lineTo(r * 0.7, r * 0.1); c.closePath(); c.fill(); c.stroke();
-    c.restore();
-  } else if (sp.id === "fjordle") {
-    // nageoires laterales
-    c.save(); c.translate(-r * 0.9, -r * 0.4); c.rotate(-earTw * 0.6);
-    c.beginPath(); c.moveTo(0, 0); c.lineTo(-r * 0.6, -r * 0.3); c.lineTo(0, r * 0.3); c.closePath(); c.fill(); c.stroke();
-    c.restore();
-    c.save(); c.translate(r * 0.9, -r * 0.4); c.rotate(earTw * 0.6);
-    c.beginPath(); c.moveTo(0, 0); c.lineTo(r * 0.6, -r * 0.3); c.lineTo(0, r * 0.3); c.closePath(); c.fill(); c.stroke();
-    c.restore();
-  } else if (sp.id === "mossnib") {
-    // feuille qui se balance comme dans le vent
-    c.save(); c.translate(0, -r * 0.6); c.rotate(Math.sin(anim * 2.2) * 0.25);
-    c.fillStyle = "#3b6e3a";
-    c.beginPath(); c.ellipse(0, -r * 0.4, r * 0.35, r * 0.6, 0.2, 0, Math.PI * 2); c.fill();
-    c.strokeStyle = "#1f3f1d"; c.beginPath(); c.moveTo(0, 0); c.lineTo(0, -r * 0.85); c.stroke();
-    c.restore();
-  } else if (sp.id === "cindrop") {
-    // flamme qui flicker (amplifie)
-    const fl = Math.sin(anim * 14) * 1.5;
-    c.fillStyle = "#ff8a3a";
-    c.beginPath();
-    c.moveTo(0, -r * 1.55); c.quadraticCurveTo(r * 0.7 + fl * 0.3, -r * 0.7, 0, -r * 0.1);
-    c.quadraticCurveTo(-r * 0.7 - fl * 0.3, -r * 0.7, 0, -r * 1.55); c.fill();
-    c.fillStyle = "#ffd866";
-    c.beginPath();
-    c.moveTo(0, -r * 1.2); c.quadraticCurveTo(r * 0.4, -r * 0.55, 0, -r * 0.2);
-    c.quadraticCurveTo(-r * 0.4, -r * 0.55, 0, -r * 1.2); c.fill();
-  } else if (sp.id === "pebbleon") {
-    c.fillStyle = "#7e6a4d";
-    c.beginPath(); c.arc(-r * 0.5, -r * 0.6, r * 0.3, 0, Math.PI * 2); c.fill();
-    c.beginPath(); c.arc(r * 0.5, -r * 0.6, r * 0.3, 0, Math.PI * 2); c.fill();
-    // petites pousses sur le dos
-    c.fillStyle = "#3b6e3a";
-    c.beginPath(); c.ellipse(0, -r * 0.85, r * 0.15, r * 0.3, 0, 0, Math.PI * 2); c.fill();
-  } else if (sp.id === "glimmer") {
-    // aura pulse
-    const aura = r * 1.4 + Math.sin(anim * 3) * 2.2;
-    c.fillStyle = sp.accent + "aa"; c.beginPath(); c.arc(0, 0, aura, 0, Math.PI * 2); c.fill();
-    c.fillStyle = sp.accent + "55"; c.beginPath(); c.arc(0, 0, aura + 4, 0, Math.PI * 2); c.fill();
-    c.fillStyle = sp.body; c.beginPath(); c.arc(0, 0, r, 0, Math.PI * 2); c.fill();
-    // petites etoiles autour
-    c.fillStyle = "#ffffff";
-    for (let i = 0; i < 3; i++) {
-      const ang = anim * 1.1 + i * 2.094;
-      const dx = Math.cos(ang) * (r * 1.7), dy = Math.sin(ang) * (r * 1.7);
-      c.beginPath(); c.arc(dx, dy, 1.2, 0, Math.PI * 2); c.fill();
-    }
-  }
-
-  // yeux (avec clignement)
-  if (blinking) {
-    c.strokeStyle = "#1a1a1a"; c.lineWidth = 1.2;
-    c.beginPath(); c.moveTo(-r * 0.55, -r * 0.05); c.lineTo(-r * 0.15, -r * 0.05); c.stroke();
-    c.beginPath(); c.moveTo(r * 0.15, -r * 0.05); c.lineTo(r * 0.55, -r * 0.05); c.stroke();
-  } else {
-    c.fillStyle = "#1a1a1a";
-    c.beginPath(); c.arc(-r * 0.35, -r * 0.05, 1.7, 0, Math.PI * 2); c.fill();
-    c.beginPath(); c.arc(r * 0.35, -r * 0.05, 1.7, 0, Math.PI * 2); c.fill();
-    c.fillStyle = "#fff";
-    c.fillRect(((-r * 0.35) | 0), ((-r * 0.45) | 0), 1, 1);
-    c.fillRect(((r * 0.35) | 0), ((-r * 0.45) | 0), 1, 1);
-  }
-  // sourire discret
-  c.strokeStyle = sp.dark; c.lineWidth = 1;
-  c.beginPath(); c.arc(0, r * 0.25, r * 0.18, 0.2, Math.PI - 0.2); c.stroke();
-
+  c.save(); c.translate(-r * 0.45, -r * 0.7); c.rotate(-0.2 + earTw);
+  c.beginPath(); c.moveTo(-r * 0.3, r * 0.35); c.lineTo(0, -r * 0.55); c.lineTo(r * 0.25, r * 0.3); c.closePath(); c.fill(); c.stroke();
+  c.fillStyle = "#ff9a3a"; // interieur oreille
+  c.beginPath(); c.moveTo(-r * 0.12, r * 0.18); c.lineTo(0, -r * 0.3); c.lineTo(r * 0.1, r * 0.18); c.closePath(); c.fill();
   c.restore();
+  c.fillStyle = sp.body;
+  c.save(); c.translate(r * 0.45, -r * 0.7); c.rotate(0.2 - earTw);
+  c.beginPath(); c.moveTo(-r * 0.25, r * 0.3); c.lineTo(0, -r * 0.55); c.lineTo(r * 0.3, r * 0.35); c.closePath(); c.fill(); c.stroke();
+  c.fillStyle = "#ff9a3a";
+  c.beginPath(); c.moveTo(-r * 0.1, r * 0.18); c.lineTo(0, -r * 0.3); c.lineTo(r * 0.12, r * 0.18); c.closePath(); c.fill();
+  c.restore();
+  // Masque sombre autour des yeux
+  c.fillStyle = "rgba(80,40,0,0.25)";
+  c.beginPath(); c.ellipse(0, -r * 0.05, r * 0.78, r * 0.32, 0, 0, Math.PI * 2); c.fill();
+  // Yeux
+  eyesPair(c, -r * 0.32, r * 0.32, -r * 0.05, 2.4, blinking, lookSide);
+  // Museau
+  c.fillStyle = sp.dark;
+  c.beginPath(); c.arc(0, r * 0.28, 1.6, 0, Math.PI * 2); c.fill();
+  // Bouche
+  c.strokeStyle = sp.dark; c.lineWidth = 1; c.lineCap = "round";
+  c.beginPath(); c.moveTo(-2, r * 0.42); c.quadraticCurveTo(0, r * 0.55, 2, r * 0.42); c.stroke();
+  // Joues
+  c.fillStyle = "rgba(255,120,80,0.35)";
+  c.beginPath(); c.arc(-r * 0.7, r * 0.25, 2, 0, Math.PI * 2); c.fill();
+  c.beginPath(); c.arc(r * 0.7, r * 0.25, 2, 0, Math.PI * 2); c.fill();
+}
+
+/* Mossnib : herisson de mousse. Corps en goutte vert, dos avec petites pousses
+   et fleurs, museau pointu rose. */
+function drawMossnib(c, sp, r, anim, blinking, lookSide) {
+  // Corps - ovale legerement etire
+  c.fillStyle = sp.body;
+  c.beginPath(); c.ellipse(0, r * 0.1, r * 1.05, r * 0.9, 0, 0, Math.PI * 2); c.fill();
+  // Ventre
+  c.fillStyle = sp.accent;
+  c.beginPath(); c.ellipse(0, r * 0.4, r * 0.65, r * 0.45, 0, 0, Math.PI * 2); c.fill();
+  c.strokeStyle = sp.dark; c.lineWidth = 1.4;
+  c.beginPath(); c.ellipse(0, r * 0.1, r * 1.05, r * 0.9, 0, 0, Math.PI * 2); c.stroke();
+  // Dos couvert de mousse / pousses : petites bosses vert fonce
+  c.fillStyle = sp.dark;
+  for (let i = 0; i < 5; i++) {
+    const a = -Math.PI + i * (Math.PI / 5) + Math.PI * 0.05;
+    const ex = Math.cos(a) * r * 0.85, ey = Math.sin(a) * r * 0.7 - r * 0.05;
+    c.beginPath(); c.arc(ex, ey, r * 0.18, 0, Math.PI * 2); c.fill();
+  }
+  // Petites feuilles (3) qui balancent
+  const sway = Math.sin(anim * 2) * 0.3;
+  for (let i = 0; i < 3; i++) {
+    const baseX = (i - 1) * r * 0.45;
+    c.save(); c.translate(baseX, -r * 0.6); c.rotate(sway + (i - 1) * 0.2);
+    c.fillStyle = "#3b6e3a";
+    c.beginPath(); c.ellipse(0, -r * 0.25, r * 0.16, r * 0.4, 0.3, 0, Math.PI * 2); c.fill();
+    c.strokeStyle = "#1f3f1d"; c.lineWidth = 1;
+    c.beginPath(); c.moveTo(0, 0); c.lineTo(0, -r * 0.55); c.stroke();
+    c.restore();
+  }
+  // Petite fleur sur la tete
+  c.fillStyle = "#ffd866";
+  c.beginPath(); c.arc(r * 0.05, -r * 0.78, r * 0.13, 0, Math.PI * 2); c.fill();
+  for (let i = 0; i < 5; i++) {
+    const a = anim * 0.5 + i * (Math.PI * 2 / 5);
+    const fx = r * 0.05 + Math.cos(a) * r * 0.18, fy = -r * 0.78 + Math.sin(a) * r * 0.18;
+    c.fillStyle = "#ff8aa6";
+    c.beginPath(); c.arc(fx, fy, r * 0.11, 0, Math.PI * 2); c.fill();
+  }
+  c.fillStyle = "#fff5b8";
+  c.beginPath(); c.arc(r * 0.05, -r * 0.78, r * 0.06, 0, Math.PI * 2); c.fill();
+
+  // Museau pointu (legerement rose)
+  c.fillStyle = sp.body;
+  c.beginPath();
+  c.moveTo(0, r * 0.05);
+  c.quadraticCurveTo(r * 0.35, r * 0.2, r * 0.5, r * 0.5);
+  c.quadraticCurveTo(r * 0.1, r * 0.55, 0, r * 0.45);
+  c.closePath(); c.fill();
+  c.strokeStyle = sp.dark; c.lineWidth = 1; c.stroke();
+  // truffe rose
+  c.fillStyle = "#ff8aa6";
+  c.beginPath(); c.arc(r * 0.48, r * 0.48, 1.6, 0, Math.PI * 2); c.fill();
+  // Yeux
+  eyesPair(c, -r * 0.18, r * 0.22, -r * 0.05, 2.2, blinking, lookSide);
+  // Joues
+  c.fillStyle = "rgba(255,140,180,0.35)";
+  c.beginPath(); c.arc(-r * 0.55, r * 0.25, 2, 0, Math.PI * 2); c.fill();
+}
+
+/* Fjordle : loutre de mer. Corps allonge bleu, museau plat, petites mains
+   sur le ventre, queue plate. */
+function drawFjordle(c, sp, r, anim, blinking, lookSide) {
+  // Queue plate qui ondule
+  c.save(); c.translate(0, r * 1.0); c.rotate(Math.sin(anim * 3) * 0.25);
+  c.fillStyle = sp.body;
+  c.beginPath(); c.ellipse(0, r * 0.15, r * 0.6, r * 0.18, 0, 0, Math.PI * 2); c.fill();
+  c.strokeStyle = sp.dark; c.lineWidth = 1; c.stroke();
+  c.restore();
+  // Corps - poire
+  c.fillStyle = sp.body;
+  c.beginPath();
+  c.moveTo(-r * 0.85, -r * 0.2);
+  c.bezierCurveTo(-r * 1.0, r * 0.6, -r * 0.4, r * 0.95, 0, r * 0.95);
+  c.bezierCurveTo(r * 0.4, r * 0.95, r * 1.0, r * 0.6, r * 0.85, -r * 0.2);
+  c.bezierCurveTo(r * 0.7, -r * 0.85, -r * 0.7, -r * 0.85, -r * 0.85, -r * 0.2);
+  c.closePath(); c.fill();
+  // ventre clair
+  c.fillStyle = sp.accent;
+  c.beginPath(); c.ellipse(0, r * 0.45, r * 0.55, r * 0.5, 0, 0, Math.PI * 2); c.fill();
+  c.strokeStyle = sp.dark; c.lineWidth = 1.4;
+  c.beginPath();
+  c.moveTo(-r * 0.85, -r * 0.2);
+  c.bezierCurveTo(-r * 1.0, r * 0.6, -r * 0.4, r * 0.95, 0, r * 0.95);
+  c.bezierCurveTo(r * 0.4, r * 0.95, r * 1.0, r * 0.6, r * 0.85, -r * 0.2);
+  c.bezierCurveTo(r * 0.7, -r * 0.85, -r * 0.7, -r * 0.85, -r * 0.85, -r * 0.2);
+  c.closePath(); c.stroke();
+  // Mains sur le ventre (en train de tenir un coquillage)
+  c.fillStyle = sp.dark;
+  c.beginPath(); c.arc(-r * 0.18, r * 0.55, r * 0.14, 0, Math.PI * 2); c.fill();
+  c.beginPath(); c.arc(r * 0.18, r * 0.55, r * 0.14, 0, Math.PI * 2); c.fill();
+  // coquillage rose
+  c.fillStyle = "#ff8aa6";
+  c.beginPath(); c.arc(0, r * 0.5, r * 0.18, 0, Math.PI * 2); c.fill();
+  c.strokeStyle = "#7a3a52"; c.lineWidth = 1;
+  for (let i = -1; i <= 1; i++) {
+    c.beginPath(); c.moveTo(i * r * 0.1, r * 0.36); c.lineTo(i * r * 0.1, r * 0.62); c.stroke();
+  }
+  // Petites oreilles arrondies
+  c.fillStyle = sp.body;
+  c.beginPath(); c.arc(-r * 0.55, -r * 0.7, r * 0.18, 0, Math.PI * 2); c.fill();
+  c.beginPath(); c.arc(r * 0.55, -r * 0.7, r * 0.18, 0, Math.PI * 2); c.fill();
+  c.strokeStyle = sp.dark; c.lineWidth = 1;
+  c.beginPath(); c.arc(-r * 0.55, -r * 0.7, r * 0.18, 0, Math.PI * 2); c.stroke();
+  c.beginPath(); c.arc(r * 0.55, -r * 0.7, r * 0.18, 0, Math.PI * 2); c.stroke();
+  // Museau plat clair
+  c.fillStyle = sp.accent;
+  c.beginPath(); c.ellipse(0, r * 0.15, r * 0.5, r * 0.28, 0, 0, Math.PI * 2); c.fill();
+  c.strokeStyle = sp.dark; c.lineWidth = 1; c.stroke();
+  // truffe
+  c.fillStyle = sp.dark;
+  c.beginPath(); c.arc(0, r * 0.05, 1.6, 0, Math.PI * 2); c.fill();
+  // moustaches
+  c.strokeStyle = sp.dark; c.lineWidth = 0.8;
+  c.beginPath(); c.moveTo(-r * 0.15, r * 0.18); c.lineTo(-r * 0.55, r * 0.2); c.stroke();
+  c.beginPath(); c.moveTo(r * 0.15, r * 0.18); c.lineTo(r * 0.55, r * 0.2); c.stroke();
+  // Yeux
+  eyesPair(c, -r * 0.28, r * 0.28, -r * 0.18, 2.2, blinking, lookSide);
+  // bouche en U
+  c.strokeStyle = sp.dark; c.lineWidth = 1; c.lineCap = "round";
+  c.beginPath();
+  c.moveTo(-2, r * 0.18); c.quadraticCurveTo(0, r * 0.32, 2, r * 0.18);
+  c.stroke();
+}
+
+/* Cindrop : poussin de cendre. Corps rouge ovale, crete de flammes
+   au-dessus, petites ailes, pattes. */
+function drawCindrop(c, sp, r, anim, blinking, lookSide) {
+  // Crete de flammes
+  const fl = Math.sin(anim * 14) * 1.2;
+  c.fillStyle = "#ff5a3a";
+  c.beginPath();
+  c.moveTo(-r * 0.55, -r * 0.6);
+  c.quadraticCurveTo(-r * 0.3 - fl * 0.3, -r * 1.4, -r * 0.1, -r * 0.7);
+  c.quadraticCurveTo(0, -r * 1.55, r * 0.15, -r * 0.7);
+  c.quadraticCurveTo(r * 0.4 + fl * 0.3, -r * 1.35, r * 0.55, -r * 0.6);
+  c.closePath(); c.fill();
+  c.fillStyle = "#ffd866";
+  c.beginPath();
+  c.moveTo(-r * 0.4, -r * 0.65);
+  c.quadraticCurveTo(-r * 0.15 - fl * 0.2, -r * 1.15, 0, -r * 0.7);
+  c.quadraticCurveTo(r * 0.2 + fl * 0.2, -r * 1.1, r * 0.4, -r * 0.65);
+  c.closePath(); c.fill();
+  c.fillStyle = "#fff5b8";
+  c.beginPath(); c.arc(0, -r * 0.95, 1.5, 0, Math.PI * 2); c.fill();
+  // Pattes
+  c.fillStyle = "#ff9a3a";
+  c.fillRect((-r * 0.45) | 0, (r * 0.85) | 0, 3, 4);
+  c.fillRect((r * 0.3) | 0, (r * 0.85) | 0, 3, 4);
+  c.fillRect((-r * 0.55) | 0, (r * 1.05) | 0, 5, 1);
+  c.fillRect((r * 0.25) | 0, (r * 1.05) | 0, 5, 1);
+  // Corps
+  c.fillStyle = sp.body;
+  c.beginPath(); c.ellipse(0, r * 0.15, r * 0.95, r * 0.85, 0, 0, Math.PI * 2); c.fill();
+  c.fillStyle = sp.accent;
+  c.beginPath(); c.ellipse(0, r * 0.4, r * 0.6, r * 0.45, 0, 0, Math.PI * 2); c.fill();
+  c.strokeStyle = sp.dark; c.lineWidth = 1.4;
+  c.beginPath(); c.ellipse(0, r * 0.15, r * 0.95, r * 0.85, 0, 0, Math.PI * 2); c.stroke();
+  // Petites ailes qui battent
+  const wingF = Math.sin(anim * 8) * 0.35;
+  c.fillStyle = sp.body;
+  c.save(); c.translate(-r * 0.85, r * 0.0); c.rotate(-0.3 + wingF);
+  c.beginPath(); c.ellipse(-r * 0.15, 0, r * 0.35, r * 0.55, 0, 0, Math.PI * 2); c.fill();
+  c.strokeStyle = sp.dark; c.stroke();
+  c.restore();
+  c.fillStyle = sp.body;
+  c.save(); c.translate(r * 0.85, r * 0.0); c.rotate(0.3 - wingF);
+  c.beginPath(); c.ellipse(r * 0.15, 0, r * 0.35, r * 0.55, 0, 0, Math.PI * 2); c.fill();
+  c.strokeStyle = sp.dark; c.stroke();
+  c.restore();
+  // Bec
+  c.fillStyle = "#ff9a3a";
+  c.beginPath();
+  c.moveTo(0, r * 0.05); c.lineTo(r * 0.18, r * 0.18); c.lineTo(0, r * 0.3); c.closePath(); c.fill();
+  c.strokeStyle = sp.dark; c.lineWidth = 1; c.stroke();
+  // Yeux
+  eyesPair(c, -r * 0.32, r * 0.32, -r * 0.05, 2.4, blinking, lookSide);
+  // Joues braise
+  c.fillStyle = "rgba(255,80,40,0.45)";
+  c.beginPath(); c.arc(-r * 0.65, r * 0.2, 2.2, 0, Math.PI * 2); c.fill();
+  c.beginPath(); c.arc(r * 0.65, r * 0.2, 2.2, 0, Math.PI * 2); c.fill();
+}
+
+/* Voltuff : mouton tonnerre. Boule de laine jaune avec cornes. */
+function drawVoltuff(c, sp, r, anim, blinking, lookSide) {
+  // Laine - chaine de bosses
+  c.fillStyle = sp.accent;
+  for (let i = 0; i < 9; i++) {
+    const a = -Math.PI + i * (Math.PI / 9) + 0.1;
+    const bx = Math.cos(a) * r * 0.95, by = Math.sin(a) * r * 0.85;
+    c.beginPath(); c.arc(bx, by, r * 0.28, 0, Math.PI * 2); c.fill();
+  }
+  // Corps interieur
+  c.fillStyle = sp.body;
+  c.beginPath(); c.ellipse(0, r * 0.05, r * 0.95, r * 0.85, 0, 0, Math.PI * 2); c.fill();
+  c.strokeStyle = sp.dark; c.lineWidth = 1.4;
+  c.beginPath(); c.ellipse(0, r * 0.05, r * 0.95, r * 0.85, 0, 0, Math.PI * 2); c.stroke();
+  // Visage rose pale
+  c.fillStyle = "#fbe4c0";
+  c.beginPath(); c.ellipse(0, r * 0.2, r * 0.55, r * 0.5, 0, 0, Math.PI * 2); c.fill();
+  c.strokeStyle = sp.dark; c.lineWidth = 1; c.stroke();
+  // Cornes en spirale
+  c.fillStyle = "#caa977"; c.strokeStyle = "#7a5e30"; c.lineWidth = 1;
+  for (const sgn of [-1, 1]) {
+    c.save(); c.translate(sgn * r * 0.55, -r * 0.55); c.rotate(sgn * 0.3);
+    c.beginPath();
+    c.moveTo(0, 0);
+    c.quadraticCurveTo(sgn * r * 0.45, -r * 0.1, sgn * r * 0.3, r * 0.18);
+    c.quadraticCurveTo(0, r * 0.05, 0, 0);
+    c.closePath(); c.fill(); c.stroke();
+    c.restore();
+  }
+  // Oreilles allongees jaunes
+  c.fillStyle = sp.body; c.strokeStyle = sp.dark;
+  for (const sgn of [-1, 1]) {
+    c.save(); c.translate(sgn * r * 0.85, -r * 0.05); c.rotate(sgn * 0.6);
+    c.beginPath(); c.ellipse(0, 0, r * 0.18, r * 0.3, 0, 0, Math.PI * 2); c.fill(); c.stroke();
+    c.restore();
+  }
+  // Yeux
+  eyesPair(c, -r * 0.22, r * 0.22, r * 0.1, 2.2, blinking, lookSide);
+  // Joues
+  c.fillStyle = "rgba(255,140,80,0.45)";
+  c.beginPath(); c.arc(-r * 0.42, r * 0.3, 2.2, 0, Math.PI * 2); c.fill();
+  c.beginPath(); c.arc(r * 0.42, r * 0.3, 2.2, 0, Math.PI * 2); c.fill();
+  // Petit eclair charge sur le front
+  c.fillStyle = "#ffec6b";
+  c.beginPath();
+  c.moveTo(-2, -r * 0.15); c.lineTo(2, -r * 0.05); c.lineTo(-1, r * 0.0);
+  c.lineTo(2, r * 0.18); c.lineTo(-2, r * 0.0); c.lineTo(1, -r * 0.05); c.closePath();
+  c.fill();
+  c.strokeStyle = "#a87b00"; c.lineWidth = 0.6; c.stroke();
+}
+
+/* Pebbleon : tortue de pierre. Carapace ronde grise avec mousse, tete sortante. */
+function drawPebbleon(c, sp, r, anim, blinking, lookSide) {
+  // Pattes courtes en bas
+  c.fillStyle = "#a89377"; c.strokeStyle = sp.dark; c.lineWidth = 1;
+  for (const sgn of [-1, 1]) {
+    c.beginPath(); c.ellipse(sgn * r * 0.55, r * 0.85, r * 0.22, r * 0.16, 0, 0, Math.PI * 2); c.fill(); c.stroke();
+  }
+  // Carapace - dome
+  c.fillStyle = "#7e6a4d";
+  c.beginPath(); c.ellipse(0, r * 0.0, r * 1.05, r * 0.85, 0, 0, Math.PI * 2); c.fill();
+  c.fillStyle = "#a89377";
+  c.beginPath(); c.ellipse(0, -r * 0.05, r * 0.9, r * 0.7, 0, 0, Math.PI * 2); c.fill();
+  c.strokeStyle = sp.dark; c.lineWidth = 1.4;
+  c.beginPath(); c.ellipse(0, r * 0.0, r * 1.05, r * 0.85, 0, 0, Math.PI * 2); c.stroke();
+  // Hexagones / plaques
+  c.strokeStyle = sp.dark; c.lineWidth = 0.8;
+  for (let i = 0; i < 5; i++) {
+    const px2 = -r * 0.6 + (i % 3) * r * 0.4;
+    const py2 = -r * 0.3 + Math.floor(i / 3) * r * 0.4;
+    c.beginPath();
+    for (let k = 0; k < 6; k++) {
+      const a = k * Math.PI / 3;
+      const xx = px2 + Math.cos(a) * r * 0.18;
+      const yy = py2 + Math.sin(a) * r * 0.16;
+      if (k === 0) c.moveTo(xx, yy); else c.lineTo(xx, yy);
+    }
+    c.closePath(); c.stroke();
+  }
+  // Mousse sur le dessus
+  c.fillStyle = "#3b6e3a";
+  c.beginPath(); c.ellipse(-r * 0.15, -r * 0.55, r * 0.4, r * 0.18, -0.1, 0, Math.PI * 2); c.fill();
+  c.fillStyle = "#5fbe3a";
+  c.beginPath(); c.ellipse(-r * 0.05, -r * 0.62, r * 0.25, r * 0.1, -0.1, 0, Math.PI * 2); c.fill();
+  // Tete sortante jaune-brun
+  const headBob = Math.sin(anim * 2) * 1.5;
+  c.fillStyle = "#caa977";
+  c.beginPath(); c.ellipse(0, r * 0.65 + headBob, r * 0.42, r * 0.35, 0, 0, Math.PI * 2); c.fill();
+  c.strokeStyle = sp.dark; c.lineWidth = 1; c.stroke();
+  // Yeux
+  c.fillStyle = "#ffffff";
+  c.beginPath(); c.arc(-r * 0.18, r * 0.6 + headBob, 2.2, 0, Math.PI * 2); c.fill();
+  c.beginPath(); c.arc(r * 0.18, r * 0.6 + headBob, 2.2, 0, Math.PI * 2); c.fill();
+  if (blinking) {
+    c.strokeStyle = "#1a1a1a"; c.lineWidth = 1.4; c.lineCap = "round";
+    c.beginPath(); c.moveTo(-r * 0.32, r * 0.6 + headBob); c.lineTo(-r * 0.05, r * 0.6 + headBob); c.stroke();
+    c.beginPath(); c.moveTo(r * 0.05, r * 0.6 + headBob); c.lineTo(r * 0.32, r * 0.6 + headBob); c.stroke();
+  } else {
+    c.fillStyle = "#1a1f3a";
+    c.beginPath(); c.arc(-r * 0.18 + lookSide, r * 0.6 + headBob, 1.4, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.arc(r * 0.18 + lookSide, r * 0.6 + headBob, 1.4, 0, Math.PI * 2); c.fill();
+  }
+  // Bouche
+  c.strokeStyle = sp.dark; c.lineCap = "round";
+  c.beginPath(); c.moveTo(-2, r * 0.78 + headBob); c.lineTo(2, r * 0.78 + headBob); c.stroke();
+}
+
+/* Glimmer : esprit lunaire. Corps flottant violet, voile transparente,
+   etoiles autour. */
+function drawGlimmer(c, sp, r, anim, blinking, lookSide) {
+  // Aura large
+  for (let k = 3; k > 0; k--) {
+    const aR = r * (1.2 + k * 0.18) + Math.sin(anim * 2.4 + k) * 1.5;
+    c.fillStyle = "rgba(212,155,255," + (0.18 / k).toFixed(2) + ")";
+    c.beginPath(); c.arc(0, 0, aR, 0, Math.PI * 2); c.fill();
+  }
+  // Etoiles tournantes
+  for (let i = 0; i < 4; i++) {
+    const ang = anim * 0.7 + i * (Math.PI / 2);
+    const sx = Math.cos(ang) * r * 1.65;
+    const sy = Math.sin(ang) * r * 1.05;
+    c.fillStyle = "#fff";
+    c.beginPath();
+    for (let k = 0; k < 5; k++) {
+      const a = k * (Math.PI * 2 / 5) - Math.PI / 2;
+      const rr = k % 2 === 0 ? 2.6 : 1.1;
+      const xx = sx + Math.cos(a) * rr, yy = sy + Math.sin(a) * rr;
+      if (k === 0) c.moveTo(xx, yy); else c.lineTo(xx, yy);
+    }
+    c.closePath(); c.fill();
+  }
+  // Voile arriere
+  c.fillStyle = "rgba(242,220,255,0.45)";
+  c.beginPath();
+  c.moveTo(-r * 0.7, r * 0.1);
+  c.bezierCurveTo(-r * 1.1, r * 0.6, -r * 0.4, r * 1.2, 0, r * 1.05);
+  c.bezierCurveTo(r * 0.4, r * 1.2, r * 1.1, r * 0.6, r * 0.7, r * 0.1);
+  c.closePath(); c.fill();
+  // Corps tete
+  c.fillStyle = sp.body;
+  c.beginPath(); c.ellipse(0, 0, r * 0.95, r, 0, 0, Math.PI * 2); c.fill();
+  c.fillStyle = sp.accent;
+  c.beginPath(); c.ellipse(0, r * 0.25, r * 0.6, r * 0.5, 0, 0, Math.PI * 2); c.fill();
+  c.strokeStyle = sp.dark; c.lineWidth = 1.4;
+  c.beginPath(); c.ellipse(0, 0, r * 0.95, r, 0, 0, Math.PI * 2); c.stroke();
+  // Couronne / antenne en croissant
+  c.strokeStyle = "#fff5b8"; c.lineWidth = 2; c.lineCap = "round";
+  c.beginPath();
+  c.arc(0, -r * 0.95, r * 0.45, Math.PI * 1.15, Math.PI * 1.85);
+  c.stroke();
+  c.fillStyle = "#fff5b8";
+  c.beginPath(); c.arc(-r * 0.42, -r * 0.85, 1.6, 0, Math.PI * 2); c.fill();
+  c.beginPath(); c.arc(r * 0.42, -r * 0.85, 1.6, 0, Math.PI * 2); c.fill();
+  // Yeux fermes / doux (semi-clos)
+  c.strokeStyle = "#3a1a4f"; c.lineWidth = 1.4; c.lineCap = "round";
+  if (blinking) {
+    c.beginPath(); c.moveTo(-r * 0.45, -r * 0.05); c.lineTo(-r * 0.15, -r * 0.05); c.stroke();
+    c.beginPath(); c.moveTo(r * 0.15, -r * 0.05); c.lineTo(r * 0.45, -r * 0.05); c.stroke();
+  } else {
+    c.beginPath(); c.arc(-r * 0.3, -r * 0.05, r * 0.18, Math.PI, 0, false); c.stroke();
+    c.beginPath(); c.arc(r * 0.3, -r * 0.05, r * 0.18, Math.PI, 0, false); c.stroke();
+  }
+  // Larme de lumiere sous oeil
+  c.fillStyle = "#fff5b8";
+  c.beginPath(); c.arc(-r * 0.3, r * 0.12, 1, 0, Math.PI * 2); c.fill();
+  // Petite bouche
+  c.strokeStyle = sp.dark; c.lineWidth = 1; c.lineCap = "round";
+  c.beginPath(); c.moveTo(-2, r * 0.32); c.quadraticCurveTo(0, r * 0.42, 2, r * 0.32); c.stroke();
+}
+
+function drawGenericCreature(c, sp, r, anim, blinking, lookSide) {
+  c.fillStyle = sp.body;
+  c.beginPath(); c.ellipse(0, 0, r, r * 0.92, 0, 0, Math.PI * 2); c.fill();
+  c.fillStyle = sp.accent;
+  c.beginPath(); c.ellipse(0, r * 0.25, r * 0.7, r * 0.55, 0, 0, Math.PI * 2); c.fill();
+  c.strokeStyle = sp.dark; c.lineWidth = 1.4;
+  c.beginPath(); c.ellipse(0, 0, r, r * 0.92, 0, 0, Math.PI * 2); c.stroke();
+  eyesPair(c, -r * 0.3, r * 0.3, -r * 0.05, 2.2, blinking, lookSide);
 }
 
 /* ---------- DIALOGUE ---------- */
@@ -1508,16 +2148,32 @@ function nearestNPC() {
   }
   return null;
 }
+function nearestObstacle() {
+  const p = Game.hub.player;
+  for (const ob of Game.hub.obstacles) {
+    if (Math.abs(ob.x - p.x) < ob.w / 2 + 18 && Math.abs(ob.y - p.y) < ob.h / 2 + 18) return ob;
+  }
+  return null;
+}
+function obstacleBlocks(x, y) {
+  for (const ob of Game.hub.obstacles) {
+    if (Math.abs(ob.x - x) < ob.w / 2 && Math.abs(ob.y - y) < ob.h / 2) return true;
+  }
+  return false;
+}
 function updateHub(dt) {
   Game.t += dt;
   const p = Game.hub.player;
+  if (Game.hub.portal) Game.hub.portal.anim = (Game.hub.portal.anim || 0) + dt;
   const v = getDirVec();
   const speed = 90;
   const nx = p.x + v.x * speed * dt, ny = p.y + v.y * speed * dt;
   const tryMove = (x, y) => {
     const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE);
     if (tx < 0 || ty < 0 || tx >= COLS || ty >= ROWS) return false;
-    return !tileSolid(Game.hub.map[ty][tx]);
+    if (tileSolid(Game.hub.map[ty][tx])) return false;
+    if (obstacleBlocks(x, y)) return false;
+    return true;
   };
   if (tryMove(nx, p.y)) p.x = nx;
   if (tryMove(p.x, ny)) p.y = ny;
@@ -1527,7 +2183,19 @@ function updateHub(dt) {
     p.anim += dt * 6;
   } else p.anim = 0;
 
+  // Portail vers le sanctuaire (collision)
+  if (Game.hub.portal && Math.abs(p.x - Game.hub.portal.x) < 16 && Math.abs(p.y - Game.hub.portal.y) < 16) {
+    SFX.iris();
+    startTransition(() => { buildSanctuary(); switchState("sanctuary"); }, { cx: p.x, cy: p.y });
+    return;
+  }
+
   if (Input.aPressed) {
+    const ob = nearestObstacle();
+    if (ob) {
+      openLuminaPicker(ob);
+      return;
+    }
     const npc = nearestNPC();
     if (npc) {
       const dx = p.x - npc.x, dy = p.y - npc.y;
@@ -1545,6 +2213,87 @@ function updateHub(dt) {
     }
   }
   if (Input.bPressed) { SFX.select(); Game.albumSelected = 0; switchState("album"); }
+}
+
+/* ---------- LUMINA PICKER (invocation) ---------- */
+function openLuminaPicker(obstacle) {
+  // Filtre : ne montre que les Lumina apaisees au moins une fois
+  const album = Array.from(Game.album);
+  if (album.length === 0) {
+    startDialogue([{ speaker: "player", text: "Aucune Lumina ne m'a encore confie son pouvoir. Va d'abord en apaiser une." }], null);
+    return;
+  }
+  Game.pickLumina = { obstacle, album, sel: 0 };
+  switchState("pickLumina");
+  SFX.select();
+}
+function updatePickLumina(dt) {
+  Game.t += dt;
+  const pk = Game.pickLumina; if (!pk) return;
+  const len = pk.album.length;
+  if (Input.pressed.has("ArrowLeft") || Input.pressed.has("KeyA") || Input.pressed.has("KeyQ")) {
+    pk.sel = (pk.sel + len - 1) % len; SFX.dialogTick();
+  }
+  if (Input.pressed.has("ArrowRight") || Input.pressed.has("KeyD")) {
+    pk.sel = (pk.sel + 1) % len; SFX.dialogTick();
+  }
+  if (Input.pressed.has("ArrowUp") || Input.pressed.has("KeyW") || Input.pressed.has("KeyZ")) {
+    pk.sel = (pk.sel + len - 4) % len; SFX.dialogTick();
+  }
+  if (Input.pressed.has("ArrowDown") || Input.pressed.has("KeyS")) {
+    pk.sel = (pk.sel + 4) % len; SFX.dialogTick();
+  }
+  if (Input.aPressed) {
+    const speciesId = pk.album[pk.sel];
+    SFX.select();
+    confirmSummon(pk.obstacle, speciesId);
+  }
+  if (Input.bPressed) {
+    SFX.back();
+    Game.pickLumina = null;
+    switchState("hub");
+  }
+}
+function confirmSummon(obstacle, speciesId) {
+  const required = OBSTACLE_TYPES[obstacle.type].species;
+  const sp = SPECIES[speciesId];
+  Game.pickLumina = null;
+  if (speciesId !== required) {
+    // Mauvais choix : message (revient au hub apres)
+    switchState("hub");
+    SFX.fail();
+    startDialogue([
+      { speaker: "player", text: sp.name + " est genee. Son " + sp.move + " ne peut rien ici." },
+      { speaker: null, text: "Indice : il faut le don de terrain d'une autre Lumina pour franchir le " + OBSTACLE_TYPES[obstacle.type].label.toLowerCase() + "." }
+    ], null);
+    return;
+  }
+  // Lance l'animation d'invocation
+  Game.summon = {
+    obstacle, species: speciesId, t: 0, phase: "appear", duration: 0
+  };
+  switchState("summon");
+  SFX.befriend();
+}
+
+function updateSummon(dt) {
+  Game.t += dt;
+  const s = Game.summon; if (!s) return;
+  s.t += dt;
+  s.duration += dt;
+  if (s.phase === "appear" && s.t > 0.6) { s.phase = "act"; s.t = 0; SFX.pulse(); }
+  else if (s.phase === "act" && s.t > 1.0) { s.phase = "leave"; s.t = 0; }
+  else if (s.phase === "leave" && s.t > 0.6) {
+    // Obstacle resolu : retire-le, persiste, retour hub
+    Game.flags.obstaclesCleared = Game.flags.obstaclesCleared || {};
+    Game.flags.obstaclesCleared[s.obstacle.id] = true;
+    Game.hub.obstacles = Game.hub.obstacles.filter((o) => o.id !== s.obstacle.id);
+    saveGame();
+    SFX.success();
+    Game.summon = null;
+    switchState("hub");
+  }
+  // bloque l'input pendant
 }
 
 /* ---------- ALBUM LUMINA ---------- */
@@ -1683,14 +2432,27 @@ function drawHub() {
   const b = botCtx;
   b.fillStyle = "#000"; b.fillRect(0, 0, SCREEN_W, SCREEN_H);
   for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) drawTile(b, Game.hub.map[y][x], x * TILE, y * TILE);
-  // Y-sort joueur + PNJ
+  // Y-sort joueur + PNJ + obstacles + portail
   const p = Game.hub.player;
-  const list = Game.hub.npcs.map(n => ({ y: n.y + 14, kind: "npc", n })).concat([{ y: p.y + 14, kind: "player" }]);
+  const list = [];
+  for (const n of Game.hub.npcs) list.push({ y: n.y + 14, kind: "npc", n });
+  for (const ob of Game.hub.obstacles) list.push({ y: ob.y + ob.h / 2, kind: "obstacle", ob });
+  if (Game.hub.portal) list.push({ y: Game.hub.portal.y + 14, kind: "portal", p: Game.hub.portal });
+  list.push({ y: p.y + 14, kind: "player" });
   list.sort((a, c) => a.y - c.y);
+
+  const nearOb = nearestObstacle();
+
   for (const it of list) {
     if (it.kind === "npc") {
       if (it.n.spriteKey === "board") drawNoticeBoard(b, it.n.x, it.n.y);
       else drawHuman(b, it.n.spriteKey, it.n.x, it.n.y, it.n.dir, 0);
+    } else if (it.kind === "obstacle") {
+      drawObstacle(b, it.ob, Game.t);
+      const sp = SPECIES[OBSTACLE_TYPES[it.ob.type].species];
+      drawObstacleHint(b, it.ob, sp, nearOb && nearOb.id === it.ob.id);
+    } else if (it.kind === "portal") {
+      drawPortal(b, it.p, Game.t);
     } else drawHuman(b, "player", p.x, p.y, p.dir, p.anim);
   }
 
@@ -1699,6 +2461,428 @@ function drawHub() {
     b.fillStyle = "#0d2236d8"; rrect(b, npc.x - 32, npc.y - 38, 64, 16, 4); b.fill();
     b.fillStyle = "#ffd866"; b.font = "8px 'Press Start 2P', monospace"; b.textAlign = "center";
     b.fillText("A : PARLER", npc.x, npc.y - 27);
+  }
+  if (nearOb) {
+    b.fillStyle = "#0d2236d8"; rrect(b, nearOb.x - 56, nearOb.y + nearOb.h / 2 + 4, 112, 16, 4); b.fill();
+    b.fillStyle = "#ffd866"; b.font = "8px 'Press Start 2P', monospace"; b.textAlign = "center";
+    b.fillText("A : APPELER LUMINA", nearOb.x, nearOb.y + nearOb.h / 2 + 14);
+  }
+  if (Game.hub.portal && Math.abs(p.x - Game.hub.portal.x) < TILE && Math.abs(p.y - Game.hub.portal.y) < TILE) {
+    b.fillStyle = "#0d2236d8"; rrect(b, Game.hub.portal.x - 56, Game.hub.portal.y - 38, 112, 16, 4); b.fill();
+    b.fillStyle = "#ffd866"; b.font = "8px 'Press Start 2P', monospace"; b.textAlign = "center";
+    b.fillText("MARCHE : SANCTUAIRE", Game.hub.portal.x, Game.hub.portal.y - 27);
+  }
+}
+
+/* ---------- LUMINA PICKER : rendu ---------- */
+function drawPickLumina() {
+  // Fond : Hub en arriere-plan assombri
+  drawHub();
+  for (const ctx of [topCtx, botCtx]) {
+    ctx.fillStyle = "rgba(0,0,0,0.55)"; ctx.fillRect(0, 0, SCREEN_W, SCREEN_H);
+  }
+  const pk = Game.pickLumina; if (!pk) return;
+  const ob = pk.obstacle;
+  const obT = OBSTACLE_TYPES[ob.type];
+
+  // TOP : explication
+  const t = topCtx;
+  t.fillStyle = "#0d2236"; rrect(t, 40, 40, SCREEN_W - 80, 200, 12); t.fill();
+  t.strokeStyle = "#ffd866"; t.lineWidth = 2;
+  rrect(t, 40, 40, SCREEN_W - 80, 200, 12); t.stroke();
+
+  t.fillStyle = "#ffd866"; t.font = "16px 'Press Start 2P', monospace"; t.textAlign = "center";
+  t.fillText("APPELER UNE LUMINA", SCREEN_W / 2, 80);
+
+  t.fillStyle = "#cfeaff"; t.font = "18px 'VT323', monospace";
+  t.fillText("Un " + obT.label + " bloque le chemin.", SCREEN_W / 2, 110);
+  t.fillText("Quelle Lumina apaisee veux-tu appeler ?", SCREEN_W / 2, 132);
+
+  // Apercu obstacle
+  t.save(); t.translate(SCREEN_W / 2 - 120, 190); t.scale(2, 2);
+  drawObstacle(t, { ...ob, x: 0, y: 0 }, Game.t);
+  t.restore();
+
+  // Apercu Lumina selectionnee
+  const speciesId = pk.album[pk.sel];
+  const sp = SPECIES[speciesId];
+  t.save(); t.translate(SCREEN_W / 2 + 120, 190); t.scale(2.4, 2.4);
+  drawCreature(t, sp, 0, 0, Game.t * 1.5, 0, false, false);
+  t.restore();
+  t.fillStyle = sp.body; t.font = "13px 'Press Start 2P', monospace"; t.textAlign = "center";
+  t.fillText(sp.name.toUpperCase(), SCREEN_W / 2 + 120, 240);
+  t.fillStyle = "#9bdce0"; t.font = "14px 'VT323', monospace";
+  t.fillText(sp.move + " - " + sp.moveDesc, SCREEN_W / 2, 270);
+
+  // hint
+  t.fillStyle = "#79e3c4"; t.font = "10px 'Press Start 2P', monospace"; t.textAlign = "center";
+  t.fillText("FLECHES : CHOISIR     A : APPELER     B : RETOUR", SCREEN_W / 2, 330);
+
+  // BOTTOM : grille des Lumina apaisees
+  const b = botCtx;
+  b.fillStyle = "#0d2236"; rrect(b, 24, 24, SCREEN_W - 48, SCREEN_H - 48, 12); b.fill();
+  b.strokeStyle = "#ffd866"; b.lineWidth = 1.4;
+  rrect(b, 24, 24, SCREEN_W - 48, SCREEN_H - 48, 12); b.stroke();
+  b.fillStyle = "#ffd866"; b.font = "12px 'Press Start 2P', monospace"; b.textAlign = "center";
+  b.fillText("ALBUM LUMINA", SCREEN_W / 2, 50);
+
+  const cols = 4;
+  const cellW = 130, cellH = 130;
+  const startX = (SCREEN_W - cellW * cols) / 2 + cellW / 2;
+  const startY = 130;
+  for (let i = 0; i < pk.album.length; i++) {
+    const sp2 = SPECIES[pk.album[i]];
+    const cx = startX + (i % cols) * cellW;
+    const cy = startY + Math.floor(i / cols) * cellH;
+    const isSel = i === pk.sel;
+    b.fillStyle = isSel ? "#1f3f5e" : "#0a1729";
+    rrect(b, cx - cellW / 2 + 8, cy - 50, cellW - 16, cellH - 14, 8); b.fill();
+    b.strokeStyle = isSel ? "#ffd866" : "#3a4d6b"; b.lineWidth = isSel ? 2 : 1;
+    rrect(b, cx - cellW / 2 + 8, cy - 50, cellW - 16, cellH - 14, 8); b.stroke();
+    drawCreature(b, sp2, cx, cy, Game.t * 0.5 + i, 0, false, false);
+    b.fillStyle = "#fff"; b.font = "10px 'Press Start 2P', monospace"; b.textAlign = "center";
+    b.fillText(sp2.name, cx, cy + 38);
+  }
+}
+
+/* ---------- SUMMON : invocation animee ---------- */
+function drawSummon() {
+  drawHub();
+  // assombrir progressivement
+  for (const ctx of [topCtx, botCtx]) {
+    ctx.fillStyle = "rgba(0,0,0,0.45)"; ctx.fillRect(0, 0, SCREEN_W, SCREEN_H);
+  }
+  const s = Game.summon; if (!s) return;
+  const sp = SPECIES[s.species];
+  const ob = s.obstacle;
+  const obT = OBSTACLE_TYPES[ob.type];
+
+  const b = botCtx;
+
+  // Position cible: a cote de l'obstacle
+  const cx = ob.x, cy = ob.y;
+  // halo d'apparition pulse
+  const grad = b.createRadialGradient(cx, cy, 6, cx, cy, 60 + Math.sin(Game.t * 8) * 4);
+  grad.addColorStop(0, sp.accent + "ff");
+  grad.addColorStop(0.5, sp.body + "88");
+  grad.addColorStop(1, sp.body + "00");
+  b.fillStyle = grad;
+  b.beginPath(); b.arc(cx, cy, 60, 0, Math.PI * 2); b.fill();
+
+  // Phase appear : bille de lumiere descend
+  if (s.phase === "appear") {
+    const k = clamp(s.t / 0.6, 0, 1);
+    // anneaux qui se referment
+    for (let i = 0; i < 3; i++) {
+      const r = (1 - k) * 80 - i * 8;
+      if (r > 0) {
+        b.strokeStyle = "rgba(255,236,160," + (0.6 - i * 0.18).toFixed(2) + ")"; b.lineWidth = 2;
+        b.beginPath(); b.arc(cx, cy, r, 0, Math.PI * 2); b.stroke();
+      }
+    }
+    // creature apparait progressivement
+    b.save(); b.globalAlpha = k;
+    b.save(); b.translate(cx, cy - 30 + k * 20); b.scale(0.8 + k * 0.4, 0.8 + k * 0.4);
+    drawCreature(b, sp, 0, 0, Game.t * 2, 0, false, false);
+    b.restore(); b.restore();
+  } else if (s.phase === "act") {
+    // creature qui agit
+    const k = clamp(s.t / 1.0, 0, 1);
+    // creature se penche vers l'obstacle
+    b.save(); b.translate(cx + Math.sin(s.t * 6) * 4, cy - 14); b.scale(1.2, 1.2);
+    drawCreature(b, sp, 0, 0, Game.t * 3, 0, true, false);
+    b.restore();
+    // effet specifique selon type
+    drawObstacleEffect(b, ob, sp, s.t);
+    // obstacle qui se dissout / s'efface
+    b.save(); b.globalAlpha = 1 - k;
+    drawObstacle(b, ob, Game.t);
+    b.restore();
+    // particules
+    for (let i = 0; i < 3; i++) {
+      const a = Game.t * 4 + i * 2;
+      b.fillStyle = sp.accent;
+      b.fillRect((cx + Math.cos(a) * 28) | 0, (cy + Math.sin(a) * 16) | 0, 2, 2);
+    }
+  } else if (s.phase === "leave") {
+    // creature monte / s'efface
+    const k = clamp(s.t / 0.6, 0, 1);
+    b.save(); b.globalAlpha = 1 - k;
+    b.save(); b.translate(cx, cy - 30 - k * 30); b.scale(1.2 - k * 0.4, 1.2 - k * 0.4);
+    drawCreature(b, sp, 0, 0, Game.t * 2, 0, false, false);
+    b.restore(); b.restore();
+    // sparkles montants
+    for (let i = 0; i < 6; i++) {
+      const sx2 = cx + (i - 3) * 6;
+      const sy2 = cy - k * 60 - i * 4;
+      b.fillStyle = "rgba(255,236,160," + (1 - k).toFixed(2) + ")";
+      b.fillRect(sx2 | 0, sy2 | 0, 1, 2);
+    }
+  }
+
+  // Bandeau d'action en bas
+  const t = topCtx;
+  t.fillStyle = "rgba(0,0,0,0.55)"; t.fillRect(0, SCREEN_H - 80, SCREEN_W, 80);
+  t.fillStyle = "#ffd866"; t.font = "16px 'Press Start 2P', monospace"; t.textAlign = "center";
+  t.fillText(sp.name.toUpperCase() + " - " + sp.move.toUpperCase(), SCREEN_W / 2, SCREEN_H - 50);
+  t.fillStyle = "#cfeaff"; t.font = "18px 'VT323', monospace";
+  t.fillText(sp.name + " " + obT.verb + " !", SCREEN_W / 2, SCREEN_H - 24);
+}
+
+function drawObstacleEffect(c, ob, sp, t) {
+  const x = ob.x, y = ob.y;
+  switch (ob.type) {
+    case "rock": {
+      // pousse-roc : trace de poussee
+      c.strokeStyle = "#a89377"; c.lineWidth = 2;
+      for (let i = 0; i < 4; i++) {
+        const a = (-0.3 + i * 0.2) + Math.sin(t * 8 + i) * 0.05;
+        c.beginPath(); c.moveTo(x - 6, y); c.lineTo(x - 6 + Math.cos(a) * 18, y + Math.sin(a) * 8); c.stroke();
+      }
+      break;
+    }
+    case "bush": {
+      // mossnib : feuilles vertes qui tournent
+      for (let i = 0; i < 8; i++) {
+        const a = t * 4 + i * (Math.PI / 4);
+        c.fillStyle = "#5fbe3a";
+        c.fillRect((x + Math.cos(a) * 14) | 0, (y + Math.sin(a) * 10) | 0, 3, 2);
+      }
+      break;
+    }
+    case "water": {
+      c.strokeStyle = "#a8d4ff"; c.lineWidth = 2;
+      for (let i = 0; i < 3; i++) {
+        c.beginPath(); c.arc(x, y, 4 + i * 6 + (t * 30 % 6), 0, Math.PI * 2); c.stroke();
+      }
+      break;
+    }
+    case "thorn": {
+      // braise
+      for (let i = 0; i < 6; i++) {
+        const a = i * (Math.PI / 3);
+        c.fillStyle = i % 2 ? "#ff8a3a" : "#ffd866";
+        c.fillRect((x + Math.cos(a) * 14) | 0, (y + Math.sin(a) * 8) | 0, 2, 2);
+      }
+      break;
+    }
+    case "dark": {
+      c.fillStyle = "#fff5b8";
+      c.beginPath(); c.arc(x, y, 18 + Math.sin(t * 8) * 4, 0, Math.PI * 2); c.fill();
+      break;
+    }
+    case "gear": {
+      c.strokeStyle = "#ffec6b"; c.lineWidth = 2;
+      for (let i = 0; i < 5; i++) {
+        const a = i * 0.6;
+        c.beginPath(); c.moveTo(x - 8 + i * 4, y - 16); c.lineTo(x - 6 + i * 4, y + 2); c.stroke();
+      }
+      break;
+    }
+    case "spirit": {
+      c.fillStyle = "rgba(255,255,255,0.6)";
+      c.beginPath(); c.arc(x, y, 14 + Math.sin(t * 6) * 3, 0, Math.PI * 2); c.fill();
+      break;
+    }
+  }
+}
+
+/* ---------- SANCTUAIRE ---------- */
+function buildSanctuary() {
+  // Map "d'observation" : entierement de l'herbe avec quelques zones thematiques.
+  const map = [];
+  for (let y = 0; y < ROWS; y++) {
+    const row = []; for (let x = 0; x < COLS; x++) row.push(0); map.push(row);
+  }
+  // Bordure d'arbres avec une seule sortie au sud
+  for (let x = 0; x < COLS; x++) { map[0][x] = 5; map[ROWS - 1][x] = 5; }
+  for (let y = 0; y < ROWS; y++) { map[y][0] = 5; map[y][COLS - 1] = 5; }
+  // Sortie au sud (centre)
+  map[ROWS - 1][9] = 1; map[ROWS - 1][10] = 1; map[ROWS - 2][9] = 1; map[ROWS - 2][10] = 1;
+  // Petite mare a gauche
+  for (let y = 4; y <= 6; y++) for (let x = 2; x <= 4; x++) map[y][x] = 3;
+  for (let x = 2; x <= 4; x++) map[3][x] = 4;
+  // Cailloux et fleurs decoratives
+  const flowers = [[2, 8], [3, 12], [5, 15], [7, 17], [8, 6], [9, 14], [3, 7], [6, 8]];
+  for (const f of flowers) if (map[f[0]][f[1]] === 0) map[f[0]][f[1]] = 11;
+  const stones = [[4, 13], [6, 16], [2, 10]];
+  for (const s of stones) if (map[s[0]][s[1]] === 0) map[s[0]][s[1]] = 10;
+
+  // Une instance pour chaque Lumina apaisee
+  const residents = [];
+  for (const id of Game.album) {
+    const sp = SPECIES[id]; if (!sp) continue;
+    let x = 0, y = 0;
+    for (let tries = 0; tries < 10; tries++) {
+      x = rand(2 * TILE, (COLS - 2) * TILE);
+      y = rand(2 * TILE, (ROWS - 2) * TILE);
+      const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE);
+      if (!tileSolid(map[ty][tx]) && map[ty][tx] !== 3) break;
+    }
+    residents.push({
+      species: sp, id,
+      x, y, vx: 0, vy: 0,
+      anim: rand(0, 5),
+      restT: rand(0.3, 1.5),
+      moveT: rand(0.6, 1.6),
+      mode: "rest"
+    });
+  }
+
+  Game.sanctuary = {
+    map,
+    residents,
+    player: { x: 9 * TILE + 16, y: (ROWS - 2) * TILE + 8, dir: "up", anim: 0 },
+    arrivedT: 0
+  };
+}
+
+function updateSanctuary(dt) {
+  Game.t += dt;
+  const sa = Game.sanctuary; if (!sa) return;
+  sa.arrivedT += dt;
+  const p = sa.player;
+  const v = getDirVec();
+  const speed = 90;
+  const nx = p.x + v.x * speed * dt, ny = p.y + v.y * speed * dt;
+  const tryMove = (x, y) => {
+    const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE);
+    if (tx < 0 || ty < 0 || tx >= COLS || ty >= ROWS) return false;
+    return !tileSolid(sa.map[ty][tx]);
+  };
+  if (tryMove(nx, p.y)) p.x = nx;
+  if (tryMove(p.x, ny)) p.y = ny;
+  if (v.x || v.y) {
+    if (Math.abs(v.x) > Math.abs(v.y)) p.dir = v.x > 0 ? "right" : "left";
+    else p.dir = v.y > 0 ? "down" : "up";
+    p.anim += dt * 6;
+  } else p.anim = 0;
+
+  // Sortie : marcher sur le bas (y >= dernier - quelques)
+  if (p.y > (ROWS - 1) * TILE - 4) {
+    SFX.iris();
+    startTransition(() => {
+      buildHub();
+      switchState("hub");
+    }, { cx: p.x, cy: p.y });
+    return;
+  }
+
+  // IA des residents : balade lente, pause, scan visuel
+  for (const r of sa.residents) {
+    r.anim += dt;
+    if (r.mode === "rest") {
+      r.restT -= dt;
+      if (r.restT <= 0) {
+        const a = rand(0, Math.PI * 2);
+        r.vx = Math.cos(a); r.vy = Math.sin(a);
+        r.moveT = rand(0.8, 2.0);
+        r.mode = "walk";
+      }
+    } else {
+      r.moveT -= dt;
+      const sp = r.species.speed * 0.35;
+      const nxR = r.x + r.vx * sp * dt;
+      const nyR = r.y + r.vy * sp * dt;
+      const tx = Math.floor(nxR / TILE), ty = Math.floor(nyR / TILE);
+      if (tx >= 1 && tx < COLS - 1 && ty >= 1 && ty < ROWS - 1 && !tileSolid(sa.map[ty][tx]) && sa.map[ty][tx] !== 3) {
+        r.x = nxR; r.y = nyR;
+      } else {
+        r.vx = -r.vx; r.vy = -r.vy;
+      }
+      if (r.moveT <= 0) {
+        r.mode = "rest"; r.restT = rand(0.6, 2.0);
+      }
+    }
+  }
+}
+
+function drawSanctuary() {
+  const sa = Game.sanctuary;
+  // TOP : panneau d'info
+  const t = topCtx;
+  const g = t.createLinearGradient(0, 0, 0, SCREEN_H);
+  g.addColorStop(0, "#bce6ff"); g.addColorStop(0.6, "#fde8a8"); g.addColorStop(1, "#9be3aa");
+  t.fillStyle = g; t.fillRect(0, 0, SCREEN_W, SCREEN_H);
+
+  // Soleil + nuages doux
+  t.fillStyle = "rgba(255,236,160,0.9)";
+  t.beginPath(); t.arc(540, 70, 28, 0, Math.PI * 2); t.fill();
+  t.fillStyle = "rgba(255,255,255,0.8)";
+  t.beginPath(); t.arc(80 + (Game.t * 10) % 600, 60, 14, 0, Math.PI * 2); t.fill();
+  t.beginPath(); t.arc(140 + (Game.t * 14) % 600, 110, 12, 0, Math.PI * 2); t.fill();
+
+  // titre
+  t.fillStyle = "#0d2236"; rrect(t, 24, 24, 592, 64, 12); t.fill();
+  t.fillStyle = "#ffd866"; t.font = "16px 'Press Start 2P', monospace"; t.textAlign = "left";
+  t.fillText("SANCTUAIRE LUMINA", 44, 56);
+  t.fillStyle = "#9bdce0"; t.font = "16px 'VT323', monospace";
+  t.fillText("Verdis Sanctuary - habitat libre", 44, 78);
+
+  // Liste des residents
+  t.fillStyle = "#0d2236"; rrect(t, 24, 110, 592, 240, 12); t.fill();
+  t.fillStyle = "#ffd866"; t.font = "12px 'Press Start 2P', monospace";
+  t.fillText("LUMINA APAISEES PRESENTES", 44, 138);
+
+  if (sa.residents.length === 0) {
+    t.fillStyle = "#cfeaff"; t.font = "16px 'VT323', monospace";
+    t.fillText("Le sanctuaire est encore desert. Apaise des Lumina pour les voir s'y installer.", 44, 170);
+  } else {
+    let yy = 162;
+    for (let i = 0; i < sa.residents.length; i++) {
+      const r = sa.residents[i];
+      const cx = 50 + (i % 4) * 144, cy = yy + Math.floor(i / 4) * 90;
+      // mini portrait
+      t.save(); t.translate(cx, cy + 18); t.scale(1.4, 1.4);
+      drawCreature(t, r.species, 0, 0, Game.t + i, 0, false, false);
+      t.restore();
+      t.fillStyle = "#cfeaff"; t.font = "12px 'VT323', monospace"; t.textAlign = "left";
+      t.fillText(r.species.name, cx + 24, cy + 14);
+      t.fillStyle = "#79e3c4";
+      t.fillText(r.species.element, cx + 24, cy + 28);
+    }
+  }
+
+  t.fillStyle = "#9bdce0"; t.font = "10px 'Press Start 2P', monospace"; t.textAlign = "center";
+  t.fillText("MARCHE VERS LE SUD POUR REVENIR AU HUB", SCREEN_W / 2, 380);
+
+  // BOTTOM : la map avec les Lumina libres
+  const b = botCtx;
+  b.fillStyle = "#000"; b.fillRect(0, 0, SCREEN_W, SCREEN_H);
+  for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) drawTile(b, sa.map[y][x], x * TILE, y * TILE);
+
+  // Y-sort
+  const items = [];
+  items.push({ y: sa.player.y + 14, kind: "player" });
+  for (const r of sa.residents) items.push({ y: r.y + r.species.radius * 0.9, kind: "creature", r });
+  items.sort((a, c) => a.y - c.y);
+  for (const it of items) {
+    if (it.kind === "player") {
+      drawHuman(b, "player", sa.player.x, sa.player.y, sa.player.dir, sa.player.anim);
+    } else {
+      drawCreature(b, it.r.species, it.r.x, it.r.y, it.r.anim, 0, false, false);
+    }
+  }
+
+  // Petits papillons / bullles d'ambiance
+  for (let i = 0; i < 5; i++) {
+    const a = Game.t * 1.2 + i * 1.3;
+    const bx = ((i * 73 + Math.sin(a) * 30 + Game.t * 30) | 0) % SCREEN_W;
+    const by = (40 + i * 50 + Math.cos(a) * 6) | 0;
+    b.fillStyle = i % 2 ? "#ff8aa6" : "#fff5b8";
+    b.fillRect(bx, by, 2, 2);
+  }
+
+  // Texte bienvenue les premieres secondes
+  if (sa.arrivedT < 3) {
+    const a = clamp(1 - Math.abs(sa.arrivedT - 1.5) / 1.5, 0, 1);
+    b.fillStyle = "rgba(13,34,54," + (0.7 * a).toFixed(2) + ")";
+    b.fillRect(0, 140, SCREEN_W, 60);
+    b.fillStyle = "rgba(255,216,102," + a.toFixed(2) + ")";
+    b.font = "16px 'Press Start 2P', monospace"; b.textAlign = "center";
+    b.fillText("BIENVENUE AU SANCTUAIRE", SCREEN_W / 2, 174);
+    b.fillStyle = "rgba(207,234,255," + a.toFixed(2) + ")"; b.font = "14px 'VT323', monospace";
+    b.fillText("Tes Lumina apaisees y vivent libres.", SCREEN_W / 2, 192);
   }
 }
 
@@ -2385,6 +3569,9 @@ function update(dt) {
     case "dialogue": updateDialogue(dt); break;
     case "capture": updateCapture(dt); break;
     case "results": updateResults(dt); break;
+    case "pickLumina": updatePickLumina(dt); break;
+    case "summon": updateSummon(dt); break;
+    case "sanctuary": updateSanctuary(dt); break;
   }
 }
 function draw() {
@@ -2395,6 +3582,9 @@ function draw() {
     case "dialogue": drawDialogue(); break;
     case "capture": drawCapture(); break;
     case "results": drawResults(); break;
+    case "pickLumina": drawPickLumina(); break;
+    case "summon": drawSummon(); break;
+    case "sanctuary": drawSanctuary(); break;
   }
   drawTransitionOverlay();
 }

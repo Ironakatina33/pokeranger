@@ -269,7 +269,8 @@ const CHARACTERS = {
   halden: { name: "Dr. Halden", colorA: "#bca7d8", colorB: "#3d2c5b", skin: "#ecc7a0", hair: "#cbcbcb" },
   shade: { name: "Shade", colorA: "#1f1f25", colorB: "#5a1029", skin: "#cfa088", hair: "#0c0c0c" },
   bran: { name: "Bran", colorA: "#d6884d", colorB: "#3b2418", skin: "#f0bd92", hair: "#3a1a0a" },
-  lila: { name: "Lila", colorA: "#ff77a5", colorB: "#7c3a55", skin: "#fbe4c0", hair: "#e8c34d" }
+  lila: { name: "Lila", colorA: "#ff77a5", colorB: "#7c3a55", skin: "#fbe4c0", hair: "#e8c34d" },
+  yuna: { name: "Yuna", colorA: "#9d6bd0", colorB: "#3b245b", skin: "#f3c79a", hair: "#1a0d2c" }
 };
 
 const STORY_INTRO = [
@@ -346,6 +347,21 @@ const MISSIONS = [
   }
 ];
 
+/* Mobilier achetable. Chaque item est unique et occupe un emplacement
+   precis dans la cabane. Le prix est en Lumes (monnaie). */
+const FURNITURE = {
+  rug:       { id: "rug",       name: "Tapis tresse",     price: 80,  slot: "floor",    desc: "Un tapis chaud aux motifs Verdis." },
+  bed:       { id: "bed",       name: "Lit warden",       price: 220, slot: "bed",      desc: "Couverture orange et drap blanc, pour de bons reves." },
+  plant_l:   { id: "plant_l",   name: "Fougere",          price: 60,  slot: "corner_l", desc: "Une fougere fournie qui pousse seule." },
+  plant_r:   { id: "plant_r",   name: "Fleur tropicale",  price: 90,  slot: "corner_r", desc: "Une fleur de Verdis, parfumee." },
+  lamp:      { id: "lamp",      name: "Lampe chaude",     price: 120, slot: "lamp",     desc: "Lumiere douce ambree, pour les soirs." },
+  table:     { id: "table",     name: "Table + chaise",   price: 140, slot: "table",    desc: "Pour relire ses notes de Warden." },
+  painting:  { id: "painting",  name: "Tableau Lumina",   price: 180, slot: "wall_l",   desc: "Une scene de Glimmer dans la nuit." },
+  bookshelf: { id: "bookshelf", name: "Bibliotheque",     price: 250, slot: "wall_r",   desc: "Carnet de terrain et atlas de Verdis." },
+  plush:     { id: "plush",     name: "Peluche Sparklit", price: 150, slot: "shelf",    desc: "Souvenir d'une amitie passagere." },
+  trophy:    { id: "trophy",    name: "Trophee Warden",   price: 300, slot: "trophy",   desc: "Recompense d'une saison entiere de service." }
+};
+
 /* Obstacles franchissables avec un don de terrain (Lumina apaisee).
    Chaque type associe l'espece dont la field move debloque le passage.
    verbActive: phrase courte affichee dans la dialogue d'invocation. */
@@ -376,12 +392,27 @@ const Game = {
   sanctuary: null,
   summon: null,         // { obstacle, species, t, phase }
   pickLumina: null,     // { obstacle, candidates, sel }
+  // Economie / housing
+  coins: 0,
+  owned: new Set(),     // ids de FURNITURE possedes
+  coinFloat: null,      // { amount, t } animation +X au-dessus du joueur
+  shop: null,           // { sel, scroll }
+  house: null,          // { player, exitT }
   // Ecran-titre
   titleMenu: "main",     // main | options | credits | confirmReset
   titleSelected: 0,
   titleEnter: 0,         // animation d'entree
   options: { volume: 0.7, muted: false }
 };
+
+/* Helper : recompense le joueur avec X Lumes (avec affichage flottant) */
+function giveCoins(amount, reason) {
+  if (!amount) return;
+  Game.coins += amount;
+  Game.coinFloat = { amount, t: 0, reason: reason || "" };
+  SFX.dialogTick();
+  saveGame();
+}
 
 function switchState(s) { Game.state = s; }
 function rememberLumina(id) { Game.album.add(id); }
@@ -398,7 +429,9 @@ function saveGame() {
       bondsTotal: Game.bondsTotal,
       album: Array.from(Game.album),
       childQuestDone: !!Game.flags.childQuestDone,
-      obstaclesCleared: Game.flags.obstaclesCleared || {}
+      obstaclesCleared: Game.flags.obstaclesCleared || {},
+      coins: Game.coins | 0,
+      owned: Array.from(Game.owned)
     };
     localStorage.setItem(SAVE_KEY, JSON.stringify(data));
   } catch (e) {}
@@ -414,6 +447,8 @@ function loadGame() {
     Game.flags.obstaclesCleared = d.obstaclesCleared || {};
     Game.bondsTotal = d.bondsTotal | 0;
     Game.album = new Set(d.album || []);
+    Game.coins = d.coins | 0;
+    Game.owned = new Set(d.owned || []);
     return true;
   } catch (e) { return false; }
 }
@@ -424,6 +459,7 @@ function resetSave() {
   try { localStorage.removeItem(SAVE_KEY); } catch (e) {}
   Game.flags = { introDone: false, missionUnlocked: 0, childQuestDone: false, obstaclesCleared: {} };
   Game.album = new Set(); Game.bondsTotal = 0;
+  Game.coins = 0; Game.owned = new Set();
 }
 function saveOptions() {
   try { localStorage.setItem(OPTIONS_KEY, JSON.stringify(Game.options)); } catch (e) {}
@@ -565,6 +601,16 @@ function buildHub() {
       lines: () => [
         { speaker: "bran", text: "Mes Mossnibs ont disparu. Si tu en croises, sois doux." }
       ] },
+    /* Marchande Yuna : decoration & maison */
+    { id: "yuna", x: 8 * TILE + 16, y: 8 * TILE + 16, dir: "down", spriteKey: "yuna",
+      lines: () => {
+        const intro = [
+          { speaker: "yuna", text: "Hey, le cadet ! Tu as une cabane vide juste a cote, non ?" },
+          { speaker: "yuna", text: "Je tiens la boutique de decoration de l'Avant-Poste. Lumes contre confort." }
+        ];
+        const ask = { speaker: "yuna", text: "Tu veux jeter un oeil a mes affaires ?", action: { type: "openShop" } };
+        return [...intro, ask];
+      } },
     /* Mini-quete: enfant qui cherche son Sparklit */
     { id: "lila", x: 7 * TILE + 16, y: 6 * TILE + 16, dir: "down", spriteKey: "lila",
       lines: () => {
@@ -2190,7 +2236,15 @@ function updateHub(dt) {
     return;
   }
 
+  // Porte de la cabane Warden (tiles row 5 cols 4-5 - tile type 9)
+  const onDoor = p.x >= 4 * TILE && p.x < 6 * TILE && p.y >= 5 * TILE && p.y < 6 * TILE;
+
   if (Input.aPressed) {
+    if (onDoor) {
+      SFX.select();
+      startTransition(() => { buildHouse(); switchState("house"); }, { cx: p.x, cy: p.y });
+      return;
+    }
     const ob = nearestObstacle();
     if (ob) {
       openLuminaPicker(ob);
@@ -2207,7 +2261,12 @@ function updateHub(dt) {
         else if (action.type === "completeChildQuest") {
           Game.flags.childQuestDone = true;
           SFX.befriend();
+          giveCoins(50, "merci");
           saveGame();
+        }
+        else if (action.type === "openShop") {
+          Game.shop = { sel: 0 };
+          switchState("shop");
         }
       });
     }
@@ -2284,16 +2343,168 @@ function updateSummon(dt) {
   if (s.phase === "appear" && s.t > 0.6) { s.phase = "act"; s.t = 0; SFX.pulse(); }
   else if (s.phase === "act" && s.t > 1.0) { s.phase = "leave"; s.t = 0; }
   else if (s.phase === "leave" && s.t > 0.6) {
-    // Obstacle resolu : retire-le, persiste, retour hub
+    // Obstacle resolu : retire-le, persiste, retour hub, recompense
     Game.flags.obstaclesCleared = Game.flags.obstaclesCleared || {};
     Game.flags.obstaclesCleared[s.obstacle.id] = true;
     Game.hub.obstacles = Game.hub.obstacles.filter((o) => o.id !== s.obstacle.id);
-    saveGame();
+    giveCoins(40, "obstacle franchi");
     SFX.success();
     Game.summon = null;
     switchState("hub");
   }
   // bloque l'input pendant
+}
+
+/* ---------- SHOP ---------- */
+function shopList() { return Object.keys(FURNITURE); }
+function updateShop(dt) {
+  Game.t += dt;
+  const sh = Game.shop; if (!sh) return;
+  const list = shopList();
+  if (Input.pressed.has("ArrowUp") || Input.pressed.has("KeyW") || Input.pressed.has("KeyZ")) {
+    sh.sel = (sh.sel + list.length - 1) % list.length; SFX.dialogTick();
+  }
+  if (Input.pressed.has("ArrowDown") || Input.pressed.has("KeyS")) {
+    sh.sel = (sh.sel + 1) % list.length; SFX.dialogTick();
+  }
+  if (Input.aPressed) {
+    const id = list[sh.sel];
+    const it = FURNITURE[id];
+    if (Game.owned.has(id)) {
+      // deja possede : ne fait rien (mais petit son)
+      SFX.back();
+    } else if (Game.coins < it.price) {
+      SFX.fail();
+    } else {
+      Game.coins -= it.price;
+      Game.owned.add(id);
+      SFX.befriend();
+      saveGame();
+    }
+  }
+  if (Input.bPressed) {
+    SFX.back();
+    Game.shop = null;
+    switchState("hub");
+  }
+}
+
+function drawShop() {
+  // TOP : titre + apercu
+  const t = topCtx;
+  const g = t.createLinearGradient(0, 0, 0, SCREEN_H);
+  g.addColorStop(0, "#3a1f5e"); g.addColorStop(1, "#0d1e34");
+  t.fillStyle = g; t.fillRect(0, 0, SCREEN_W, SCREEN_H);
+  // bandeau
+  t.fillStyle = "#0d2236"; rrect(t, 24, 20, 592, 60, 12); t.fill();
+  t.strokeStyle = "#ffd866"; t.lineWidth = 2; rrect(t, 24, 20, 592, 60, 12); t.stroke();
+  t.fillStyle = "#ffd866"; t.font = "16px 'Press Start 2P', monospace"; t.textAlign = "left";
+  t.fillText("BAZAR DE YUNA", 44, 50);
+  t.fillStyle = "#9bdce0"; t.font = "16px 'VT323', monospace";
+  t.fillText("Confort & decoration de cabane", 44, 70);
+  // coins
+  drawCoinBadge(t, 596, 50);
+
+  const sh = Game.shop;
+  const list = shopList();
+  const id = list[sh.sel];
+  const it = FURNITURE[id];
+  const owned = Game.owned.has(id);
+  const canBuy = !owned && Game.coins >= it.price;
+
+  // Apercu meuble (sprite agrandi)
+  t.fillStyle = "#0d2236"; rrect(t, 40, 100, 240, 240, 10); t.fill();
+  t.strokeStyle = "#5a7a96"; t.lineWidth = 1; rrect(t, 40, 100, 240, 240, 10); t.stroke();
+  t.save(); t.translate(160, 220); t.scale(2.4, 2.4);
+  drawFurniture(t, id, 0, 0, Game.t);
+  t.restore();
+  t.fillStyle = "#79e3c4"; t.font = "10px 'Press Start 2P', monospace"; t.textAlign = "center";
+  t.fillText(it.slot.toUpperCase(), 160, 326);
+
+  // Detail
+  t.fillStyle = "#0d2236"; rrect(t, 296, 100, 320, 240, 10); t.fill();
+  t.fillStyle = "#ffd866"; t.font = "14px 'Press Start 2P', monospace"; t.textAlign = "left";
+  t.fillText(it.name.toUpperCase(), 312, 132);
+  t.fillStyle = "#cfeaff"; t.font = "16px 'VT323', monospace";
+  wrapText(t, it.desc, 312, 158, 290, 18);
+
+  t.fillStyle = "#9bdce0"; t.font = "12px 'Press Start 2P', monospace";
+  t.fillText("PRIX", 312, 240);
+  t.fillStyle = "#ffd866"; t.font = "20px 'Press Start 2P', monospace";
+  t.fillText(it.price + " L", 312, 270);
+
+  if (owned) {
+    t.fillStyle = "#79e3c4"; t.font = "12px 'Press Start 2P', monospace";
+    t.fillText("DEJA POSSEDE", 312, 308);
+  } else if (canBuy) {
+    if (Math.floor(Game.t * 3) % 2 === 0) {
+      t.fillStyle = "#79e3c4"; t.font = "12px 'Press Start 2P', monospace";
+      t.fillText("A : ACHETER", 312, 308);
+    }
+  } else {
+    t.fillStyle = "#ff8a6b"; t.font = "12px 'Press Start 2P', monospace";
+    t.fillText("LUMES INSUFFISANTS", 312, 308);
+  }
+
+  // BOTTOM : la liste
+  const b = botCtx;
+  const g2 = b.createLinearGradient(0, 0, 0, SCREEN_H);
+  g2.addColorStop(0, "#1c2a4a"); g2.addColorStop(1, "#0a1525");
+  b.fillStyle = g2; b.fillRect(0, 0, SCREEN_W, SCREEN_H);
+
+  b.fillStyle = "#0d2236"; rrect(b, 16, 16, 608, 26, 8); b.fill();
+  b.fillStyle = "#ffd866"; b.font = "12px 'Press Start 2P', monospace"; b.textAlign = "left";
+  b.fillText("CATALOGUE", 30, 34);
+  b.textAlign = "right";
+  drawCoinBadge(b, SCREEN_W - 30, 32);
+
+  // Liste 2 colonnes
+  const itemH = 32;
+  const colW = 290;
+  for (let i = 0; i < list.length; i++) {
+    const ii = FURNITURE[list[i]];
+    const col = i < 5 ? 0 : 1;
+    const row = i % 5;
+    const x = 24 + col * (colW + 10);
+    const y = 56 + row * itemH;
+    const sel = i === sh.sel;
+    const owns = Game.owned.has(list[i]);
+    b.fillStyle = sel ? "#1f3f5e" : "#0a1729";
+    rrect(b, x, y, colW, itemH - 4, 6); b.fill();
+    b.strokeStyle = sel ? "#ffd866" : "#3a4d6b"; b.lineWidth = sel ? 2 : 1;
+    rrect(b, x, y, colW, itemH - 4, 6); b.stroke();
+    // mini sprite
+    b.save(); b.translate(x + 18, y + 14); b.scale(0.55, 0.55);
+    drawFurniture(b, list[i], 0, 0, Game.t);
+    b.restore();
+    // nom
+    b.fillStyle = "#fff"; b.font = "11px 'Press Start 2P', monospace"; b.textAlign = "left";
+    b.fillText(ii.name, x + 38, y + 14);
+    // prix / status
+    b.textAlign = "right";
+    if (owns) { b.fillStyle = "#79e3c4"; b.fillText("OWNED", x + colW - 8, y + 14); }
+    else if (Game.coins >= ii.price) { b.fillStyle = "#ffd866"; b.fillText(ii.price + " L", x + colW - 8, y + 14); }
+    else { b.fillStyle = "#ff8a6b"; b.fillText(ii.price + " L", x + colW - 8, y + 14); }
+  }
+
+  // hint
+  b.fillStyle = "#79e3c4"; b.font = "10px 'Press Start 2P', monospace"; b.textAlign = "center";
+  b.fillText("FLECHES : NAVIGUER     A : ACHETER     B : QUITTER", 320, 348);
+  b.fillStyle = "#9bdce0"; b.font = "10px 'Press Start 2P', monospace";
+  b.fillText("Place tes meubles dans la cabane (porte de la maison Warden)", 320, 368);
+}
+
+function drawCoinBadge(c, rx, ry) {
+  // pastille piece + valeur
+  c.save(); c.textBaseline = "middle";
+  c.fillStyle = "#ffd866"; c.beginPath(); c.arc(rx - 70, ry, 6, 0, Math.PI * 2); c.fill();
+  c.fillStyle = "#a87b00"; c.beginPath(); c.arc(rx - 70, ry, 4, 0, Math.PI * 2); c.fill();
+  c.fillStyle = "#fff5b8"; c.font = "10px 'Press Start 2P', monospace"; c.textAlign = "left";
+  c.fillText("L", rx - 73, ry + 1);
+  c.fillStyle = "#ffd866"; c.font = "12px 'Press Start 2P', monospace"; c.textAlign = "right";
+  c.fillText(Game.coins + " Lumes", rx, ry);
+  c.textBaseline = "alphabetic";
+  c.restore();
 }
 
 /* ---------- ALBUM LUMINA ---------- */
@@ -2428,6 +2639,11 @@ function drawHub() {
   t.fillText("Liens noues : " + Game.bondsTotal + "  -  Album: " + Game.album.size + "/" + Object.keys(SPECIES).length, 600, 370);
   t.fillStyle = "#ffd866"; t.font = "10px 'Press Start 2P', monospace";
   t.fillText("B : ALBUM LUMINA", 600, 350);
+
+  // Compteur Lumes en haut a droite du top
+  t.fillStyle = "#0d2236d8"; rrect(t, 460, 30, 152, 24, 6); t.fill();
+  t.strokeStyle = "#ffd866"; t.lineWidth = 1; rrect(t, 460, 30, 152, 24, 6); t.stroke();
+  drawCoinBadge(t, 600, 42);
 
   const b = botCtx;
   b.fillStyle = "#000"; b.fillRect(0, 0, SCREEN_W, SCREEN_H);
@@ -2886,6 +3102,511 @@ function drawSanctuary() {
   }
 }
 
+/* ---------- HOUSE (cabane warden interieure) ---------- */
+
+/* Slots fixes dans la piece (centre de l'objet, en pixels du canvas bas) */
+const HOUSE_SLOTS = {
+  floor:    { x: 320, y: 240 },  // tapis sous tout
+  bed:      { x: 130, y: 130 },
+  table:    { x: 460, y: 240 },
+  lamp:     { x: 540, y: 130 },
+  wall_l:   { x: 200, y: 70 },
+  wall_r:   { x: 470, y: 80 },
+  corner_l: { x: 60,  y: 290 },
+  corner_r: { x: 590, y: 290 },
+  shelf:    { x: 290, y: 70 },
+  trophy:   { x: 380, y: 70 }
+};
+
+function buildHouse() {
+  Game.house = {
+    player: { x: 320, y: 320, dir: "up", anim: 0 },
+    exitT: 0,
+    welcomeT: 0
+  };
+}
+
+function updateHouse(dt) {
+  Game.t += dt;
+  const h = Game.house; if (!h) return;
+  h.welcomeT += dt;
+  const p = h.player;
+  const v = getDirVec();
+  const speed = 90;
+  const nx = p.x + v.x * speed * dt, ny = p.y + v.y * speed * dt;
+  // murs : haut 56, bas 340, gauche 36, droite 604
+  const inBounds = (x, y) => x >= 36 && x <= 604 && y >= 56 && y <= 340;
+  if (inBounds(nx, p.y)) p.x = nx;
+  if (inBounds(p.x, ny)) p.y = ny;
+  if (v.x || v.y) {
+    if (Math.abs(v.x) > Math.abs(v.y)) p.dir = v.x > 0 ? "right" : "left";
+    else p.dir = v.y > 0 ? "down" : "up";
+    p.anim += dt * 6;
+  } else p.anim = 0;
+
+  // Sortie : tapis devant la porte, en bas centre
+  const onMat = Math.abs(p.x - 320) < 20 && p.y > 322;
+  if (onMat && Input.pressed.has("ArrowDown")) {
+    SFX.iris();
+    startTransition(() => { switchState("hub"); }, { cx: p.x, cy: p.y });
+    return;
+  }
+  if (Input.bPressed) {
+    SFX.back();
+    startTransition(() => { switchState("hub"); }, { cx: p.x, cy: p.y });
+  }
+}
+
+function drawHouse() {
+  const h = Game.house; if (!h) return;
+  const t = topCtx, b = botCtx;
+
+  /* TOP : info + inventaire */
+  const g = t.createLinearGradient(0, 0, 0, SCREEN_H);
+  g.addColorStop(0, "#26171f"); g.addColorStop(1, "#3b2418");
+  t.fillStyle = g; t.fillRect(0, 0, SCREEN_W, SCREEN_H);
+
+  // bandeau
+  t.fillStyle = "#0d2236"; rrect(t, 24, 20, 592, 60, 12); t.fill();
+  t.strokeStyle = "#ffd866"; t.lineWidth = 2; rrect(t, 24, 20, 592, 60, 12); t.stroke();
+  t.fillStyle = "#ffd866"; t.font = "16px 'Press Start 2P', monospace"; t.textAlign = "left";
+  t.fillText("MA CABANE", 44, 50);
+  t.fillStyle = "#9bdce0"; t.font = "16px 'VT323', monospace";
+  t.fillText("Avant-Poste Halcyon - quartier des cadets", 44, 70);
+  drawCoinBadge(t, 596, 50);
+
+  // Inventaire / progression
+  t.fillStyle = "#0d2236"; rrect(t, 24, 90, 592, 260, 12); t.fill();
+  t.fillStyle = "#ffd866"; t.font = "12px 'Press Start 2P', monospace";
+  t.fillText("MOBILIER POSSEDE  (" + Game.owned.size + " / " + Object.keys(FURNITURE).length + ")", 44, 116);
+
+  const list = Object.keys(FURNITURE);
+  for (let i = 0; i < list.length; i++) {
+    const id = list[i];
+    const it = FURNITURE[id];
+    const owns = Game.owned.has(id);
+    const col = i % 2;
+    const row = Math.floor(i / 2);
+    const x = 44 + col * 290;
+    const y = 140 + row * 38;
+    t.fillStyle = owns ? "#1f3f5e" : "#0a1729";
+    rrect(t, x, y, 280, 32, 6); t.fill();
+    t.strokeStyle = owns ? "#79e3c4" : "#3a4d6b"; t.lineWidth = 1;
+    rrect(t, x, y, 280, 32, 6); t.stroke();
+    t.save(); t.translate(x + 18, y + 16); t.scale(0.5, 0.5);
+    drawFurniture(t, id, 0, 0, Game.t);
+    t.restore();
+    t.fillStyle = owns ? "#fff" : "#6b7892"; t.font = "10px 'Press Start 2P', monospace"; t.textAlign = "left";
+    t.fillText(it.name, x + 38, y + 18);
+    t.textAlign = "right";
+    if (owns) { t.fillStyle = "#79e3c4"; t.fillText("OK", x + 270, y + 18); }
+    else { t.fillStyle = "#ff8a6b"; t.fillText(it.price + " L", x + 270, y + 18); }
+  }
+
+  t.fillStyle = "#9bdce0"; t.font = "10px 'Press Start 2P', monospace"; t.textAlign = "center";
+  t.fillText("BAS : RETOUR HUB     B : SORTIR", 320, 376);
+
+  /* BOTTOM : la piece */
+  // mur fond (planches)
+  const wallGrad = b.createLinearGradient(0, 0, 0, 56);
+  wallGrad.addColorStop(0, "#7a4f2c"); wallGrad.addColorStop(1, "#5a3a1f");
+  b.fillStyle = wallGrad; b.fillRect(0, 0, SCREEN_W, 56);
+  // bandes verticales (planches)
+  b.fillStyle = "rgba(0,0,0,0.18)";
+  for (let i = 0; i < 12; i++) b.fillRect(i * (SCREEN_W / 12), 0, 1, 56);
+  // moulure
+  b.fillStyle = "#3a2418"; b.fillRect(0, 52, SCREEN_W, 4);
+  b.fillStyle = "#a87b50"; b.fillRect(0, 50, SCREEN_W, 1);
+
+  // sol (parquet)
+  for (let y = 56; y < 340; y += 16) {
+    const lighter = (y / 16) % 2 === 0;
+    b.fillStyle = lighter ? "#caa977" : "#b89568";
+    b.fillRect(0, y, SCREEN_W, 16);
+    b.fillStyle = "rgba(60,40,20,0.18)";
+    b.fillRect(0, y + 15, SCREEN_W, 1);
+  }
+  // joints planches verticaux
+  b.fillStyle = "rgba(60,40,20,0.18)";
+  for (let i = 0; i < 8; i++) b.fillRect(i * 80 + ((Math.floor((i / 16))) * 40), 56, 1, 284);
+
+  // sol bas : seuil/moquette devant la porte
+  b.fillStyle = "#3a2418"; b.fillRect(0, 340, SCREEN_W, 12);
+  b.fillStyle = "#5a3a1f"; b.fillRect(0, 352, SCREEN_W, 32);
+  // tapis seuil
+  b.fillStyle = "#9d2c2c";
+  rrect(b, 280, 332, 80, 14, 3); b.fill();
+  b.fillStyle = "#d04040"; rrect(b, 282, 334, 76, 10, 2); b.fill();
+  b.fillStyle = "#ffd866"; b.fillRect(286, 338, 68, 1);
+  // porte
+  b.fillStyle = "#3a2418"; rrect(b, 296, 348, 48, 36, 4); b.fill();
+  b.fillStyle = "#5a3a1f"; rrect(b, 298, 350, 44, 30, 3); b.fill();
+  b.fillStyle = "#ffd866"; b.beginPath(); b.arc(336, 366, 1.6, 0, Math.PI * 2); b.fill();
+
+  // Liste de meubles ordonnee : premier etage en arriere (wall), puis sol, puis premier plan
+  const drawOrder = [
+    "rug",       // sol d'abord
+    "painting", "shelf", "trophy", "bookshelf",   // sur le mur
+    "bed", "table", "lamp",                        // mobilier
+    "plant_l", "plant_r"                           // plantes au sol (avant sortable)
+  ];
+
+  // Y-sort joueur + meubles "au sol" (bed, table, lamp, plants)
+  const sortable = [];
+  for (const fid of ["bed", "table", "lamp", "plant_l", "plant_r"]) {
+    if (Game.owned.has(fid)) {
+      const slot = HOUSE_SLOTS[FURNITURE[fid].slot];
+      sortable.push({ kind: "furn", id: fid, x: slot.x, y: slot.y });
+    }
+  }
+  sortable.push({ kind: "player", x: h.player.x, y: h.player.y });
+
+  // dessine d'abord le tapis
+  if (Game.owned.has("rug")) drawFurniture(b, "rug", HOUSE_SLOTS.floor.x, HOUSE_SLOTS.floor.y, Game.t);
+  // puis les murs
+  for (const fid of ["painting", "shelf", "trophy", "bookshelf"]) {
+    if (Game.owned.has(fid)) {
+      const slot = HOUSE_SLOTS[FURNITURE[fid].slot];
+      drawFurniture(b, fid, slot.x, slot.y, Game.t);
+    }
+  }
+  // puis sol y-sorte
+  sortable.sort((a, c) => a.y - c.y);
+  for (const it of sortable) {
+    if (it.kind === "player") {
+      drawHuman(b, "player", h.player.x, h.player.y, h.player.dir, h.player.anim);
+    } else {
+      drawFurniture(b, it.id, it.x, it.y, Game.t);
+    }
+  }
+
+  // Vignette
+  const vg = b.createRadialGradient(SCREEN_W / 2, 200, 100, SCREEN_W / 2, 200, 380);
+  vg.addColorStop(0, "rgba(255,236,160,0.08)");
+  vg.addColorStop(1, "rgba(0,0,0,0.45)");
+  b.fillStyle = vg; b.fillRect(0, 0, SCREEN_W, SCREEN_H);
+
+  // Hint sortie quand sur tapis
+  if (Math.abs(h.player.x - 320) < 20 && h.player.y > 310) {
+    b.fillStyle = "#0d2236d8"; rrect(b, 240, 280, 160, 18, 4); b.fill();
+    b.fillStyle = "#ffd866"; b.font = "9px 'Press Start 2P', monospace"; b.textAlign = "center";
+    b.fillText("BAS : SORTIR DE LA CABANE", 320, 292);
+  }
+
+  // Bienvenue/info au debut
+  if (h.welcomeT < 2.5 && Game.owned.size === 0) {
+    const a = clamp(1 - Math.abs(h.welcomeT - 1.2) / 1.2, 0, 1);
+    b.fillStyle = "rgba(13,34,54," + (0.6 * a).toFixed(2) + ")";
+    b.fillRect(60, 140, SCREEN_W - 120, 60);
+    b.fillStyle = "rgba(255,216,102," + a.toFixed(2) + ")";
+    b.font = "12px 'Press Start 2P', monospace"; b.textAlign = "center";
+    b.fillText("CABANE VIDE", SCREEN_W / 2, 168);
+    b.fillStyle = "rgba(207,234,255," + a.toFixed(2) + ")"; b.font = "14px 'VT323', monospace";
+    b.fillText("Achete des meubles chez Yuna pour la decorer.", SCREEN_W / 2, 188);
+  }
+}
+
+/* Dispatcher meubles */
+function drawFurniture(c, id, x, y, t) {
+  switch (id) {
+    case "rug":       drawFurnRug(c, x, y); break;
+    case "bed":       drawFurnBed(c, x, y); break;
+    case "plant_l":   drawFurnPlantFern(c, x, y, t); break;
+    case "plant_r":   drawFurnPlantFlower(c, x, y, t); break;
+    case "lamp":      drawFurnLamp(c, x, y, t); break;
+    case "table":     drawFurnTable(c, x, y); break;
+    case "painting":  drawFurnPainting(c, x, y); break;
+    case "bookshelf": drawFurnBookshelf(c, x, y); break;
+    case "plush":     drawFurnPlush(c, x, y, t); break;
+    case "trophy":    drawFurnTrophy(c, x, y, t); break;
+  }
+}
+
+/* Tapis tresse */
+function drawFurnRug(c, x, y) {
+  c.save();
+  // ovale tisse
+  c.fillStyle = "#7a3a52";
+  c.beginPath(); c.ellipse(x, y, 130, 56, 0, 0, Math.PI * 2); c.fill();
+  c.fillStyle = "#c45a7a";
+  c.beginPath(); c.ellipse(x, y, 110, 46, 0, 0, Math.PI * 2); c.fill();
+  c.fillStyle = "#ff8aa6";
+  c.beginPath(); c.ellipse(x, y, 90, 36, 0, 0, Math.PI * 2); c.fill();
+  c.fillStyle = "#ffd866";
+  c.beginPath(); c.ellipse(x, y, 60, 22, 0, 0, Math.PI * 2); c.fill();
+  c.fillStyle = "#fff5b8";
+  c.beginPath(); c.ellipse(x, y, 24, 8, 0, 0, Math.PI * 2); c.fill();
+  // motif radial
+  c.strokeStyle = "rgba(122,58,82,0.3)"; c.lineWidth = 1;
+  for (let i = 0; i < 8; i++) {
+    const a = i * (Math.PI / 8);
+    c.beginPath();
+    c.moveTo(x - Math.cos(a) * 120, y - Math.sin(a) * 50);
+    c.lineTo(x + Math.cos(a) * 120, y + Math.sin(a) * 50);
+    c.stroke();
+  }
+  // franges
+  c.strokeStyle = "#7a3a52"; c.lineWidth = 1;
+  for (let i = -10; i <= 10; i++) {
+    c.beginPath(); c.moveTo(x + i * 12, y - 56); c.lineTo(x + i * 12, y - 60); c.stroke();
+    c.beginPath(); c.moveTo(x + i * 12, y + 56); c.lineTo(x + i * 12, y + 60); c.stroke();
+  }
+  c.restore();
+}
+
+/* Lit warden : matelas + couverture + oreiller */
+function drawFurnBed(c, x, y) {
+  // ombre
+  c.fillStyle = "rgba(0,0,0,0.32)";
+  c.beginPath(); c.ellipse(x, y + 22, 50, 6, 0, 0, Math.PI * 2); c.fill();
+  // structure bois bas
+  c.fillStyle = "#5a3a1f"; c.fillRect(x - 50, y + 12, 100, 10);
+  c.fillStyle = "#7a4f2c"; c.fillRect(x - 50, y + 12, 100, 4);
+  // pieds
+  c.fillStyle = "#3a2418";
+  c.fillRect(x - 50, y + 22, 6, 6); c.fillRect(x + 44, y + 22, 6, 6);
+  // tete de lit
+  c.fillStyle = "#7a4f2c"; c.fillRect(x - 50, y - 16, 12, 30);
+  c.fillStyle = "#5a3a1f"; c.fillRect(x - 48, y - 14, 8, 26);
+  // matelas
+  c.fillStyle = "#fbe4c0"; c.fillRect(x - 38, y - 8, 88, 22);
+  c.strokeStyle = "#caa977"; c.lineWidth = 1;
+  c.beginPath(); c.moveTo(x - 38, y - 8); c.lineTo(x + 50, y - 8); c.stroke();
+  // couverture orange (cote pieds)
+  c.fillStyle = "#ff6b3d"; c.fillRect(x + 4, y - 8, 46, 22);
+  c.fillStyle = "#ffd866"; c.fillRect(x + 4, y - 8, 46, 2);
+  c.strokeStyle = "#a83a1f"; c.lineWidth = 1;
+  c.beginPath(); c.moveTo(x + 4, y - 8); c.lineTo(x + 4, y + 14); c.stroke();
+  // oreiller
+  c.fillStyle = "#ffffff";
+  rrect(c, x - 36, y - 6, 30, 14, 3); c.fill();
+  c.strokeStyle = "#caa977"; rrect(c, x - 36, y - 6, 30, 14, 3); c.stroke();
+  // logo Warden sur couverture
+  c.fillStyle = "#ffd866";
+  c.beginPath(); c.ellipse(x + 24, y + 4, 4, 2.5, -0.3, 0, Math.PI * 2); c.fill();
+}
+
+/* Fougere en pot */
+function drawFurnPlantFern(c, x, y, t) {
+  // pot
+  c.fillStyle = "rgba(0,0,0,0.32)";
+  c.beginPath(); c.ellipse(x, y + 18, 14, 4, 0, 0, Math.PI * 2); c.fill();
+  c.fillStyle = "#7a3a1f";
+  c.beginPath();
+  c.moveTo(x - 12, y + 4); c.lineTo(x + 12, y + 4); c.lineTo(x + 10, y + 16); c.lineTo(x - 10, y + 16); c.closePath();
+  c.fill();
+  c.fillStyle = "#a04a2c"; c.fillRect(x - 12, y + 4, 24, 2);
+  c.strokeStyle = "#3a1408"; c.lineWidth = 1; c.stroke();
+  // feuilles - 5 grandes
+  const sway = Math.sin(t * 1.2) * 0.15;
+  for (let i = 0; i < 5; i++) {
+    const angle = -Math.PI / 2 + (i - 2) * 0.5 + sway;
+    c.save(); c.translate(x, y + 4); c.rotate(angle);
+    c.fillStyle = i % 2 ? "#3b6e3a" : "#5fbe3a";
+    c.beginPath();
+    c.moveTo(0, 0);
+    c.quadraticCurveTo(4, -10, 0, -22);
+    c.quadraticCurveTo(-4, -10, 0, 0);
+    c.fill();
+    c.strokeStyle = "#1f3f1d"; c.lineWidth = 1;
+    c.beginPath(); c.moveTo(0, 0); c.lineTo(0, -22); c.stroke();
+    c.restore();
+  }
+}
+
+/* Fleur tropicale */
+function drawFurnPlantFlower(c, x, y, t) {
+  c.fillStyle = "rgba(0,0,0,0.32)";
+  c.beginPath(); c.ellipse(x, y + 18, 12, 4, 0, 0, Math.PI * 2); c.fill();
+  // pot bleu
+  c.fillStyle = "#274f8a";
+  c.beginPath();
+  c.moveTo(x - 10, y + 4); c.lineTo(x + 10, y + 4); c.lineTo(x + 8, y + 16); c.lineTo(x - 8, y + 16); c.closePath();
+  c.fill();
+  c.fillStyle = "#3a78b8"; c.fillRect(x - 10, y + 4, 20, 2);
+  // tige
+  c.strokeStyle = "#3b6e3a"; c.lineWidth = 2;
+  c.beginPath(); c.moveTo(x, y + 4); c.lineTo(x + 1, y - 16); c.stroke();
+  // feuilles
+  c.fillStyle = "#5fbe3a";
+  c.beginPath(); c.ellipse(x - 6, y - 6, 4, 8, -0.5, 0, Math.PI * 2); c.fill();
+  c.beginPath(); c.ellipse(x + 6, y - 4, 4, 8, 0.5, 0, Math.PI * 2); c.fill();
+  // fleur (oscille legerement)
+  const sway = Math.sin(t * 1.3) * 1;
+  c.fillStyle = "#ff8aa6";
+  for (let i = 0; i < 5; i++) {
+    const a = i * (Math.PI * 2 / 5) + sway * 0.05;
+    const fx = x + 1 + Math.cos(a) * 5, fy = y - 16 + Math.sin(a) * 5;
+    c.beginPath(); c.arc(fx, fy, 4, 0, Math.PI * 2); c.fill();
+  }
+  c.fillStyle = "#ffd866";
+  c.beginPath(); c.arc(x + 1, y - 16, 3, 0, Math.PI * 2); c.fill();
+  c.fillStyle = "#fff5b8";
+  c.beginPath(); c.arc(x, y - 17, 1, 0, Math.PI * 2); c.fill();
+}
+
+/* Lampe chaude */
+function drawFurnLamp(c, x, y, t) {
+  // ombre
+  c.fillStyle = "rgba(0,0,0,0.32)";
+  c.beginPath(); c.ellipse(x, y + 26, 10, 3, 0, 0, Math.PI * 2); c.fill();
+  // base
+  c.fillStyle = "#3a2418"; c.fillRect(x - 6, y + 20, 12, 6);
+  c.fillStyle = "#5a3a1f"; c.fillRect(x - 6, y + 20, 12, 1);
+  // tige
+  c.fillStyle = "#3a2418"; c.fillRect(x - 1, y - 8, 2, 28);
+  // abat-jour
+  c.fillStyle = "#ffd866";
+  c.beginPath();
+  c.moveTo(x - 14, y - 10); c.lineTo(x + 14, y - 10);
+  c.lineTo(x + 12, y - 22); c.lineTo(x - 12, y - 22); c.closePath();
+  c.fill();
+  c.strokeStyle = "#a87b00"; c.lineWidth = 1; c.stroke();
+  c.fillStyle = "#fff5b8";
+  c.beginPath();
+  c.moveTo(x - 12, y - 11); c.lineTo(x + 12, y - 11);
+  c.lineTo(x + 10, y - 20); c.lineTo(x - 10, y - 20); c.closePath();
+  c.fill();
+  // halo
+  const grad = c.createRadialGradient(x, y - 14, 4, x, y - 14, 40);
+  grad.addColorStop(0, "rgba(255,236,160,0.55)");
+  grad.addColorStop(1, "rgba(255,236,160,0)");
+  c.fillStyle = grad;
+  c.beginPath(); c.arc(x, y - 14, 40 + Math.sin(t * 4) * 1.5, 0, Math.PI * 2); c.fill();
+}
+
+/* Table ronde + chaise */
+function drawFurnTable(c, x, y) {
+  c.fillStyle = "rgba(0,0,0,0.32)";
+  c.beginPath(); c.ellipse(x, y + 22, 30, 6, 0, 0, Math.PI * 2); c.fill();
+  // chaise (a droite)
+  c.fillStyle = "#5a3a1f"; c.fillRect(x + 22, y - 4, 10, 22);
+  c.fillStyle = "#7a4f2c"; c.fillRect(x + 22, y - 12, 10, 8); // dossier
+  c.fillStyle = "#3a2418"; c.fillRect(x + 22, y + 18, 2, 4); c.fillRect(x + 30, y + 18, 2, 4);
+  // pied table
+  c.fillStyle = "#3a2418"; c.fillRect(x - 2, y - 4, 4, 22);
+  c.fillStyle = "#5a3a1f"; c.fillRect(x - 12, y + 18, 24, 4);
+  // plateau
+  c.fillStyle = "#7a4f2c";
+  c.beginPath(); c.ellipse(x, y - 4, 26, 8, 0, 0, Math.PI * 2); c.fill();
+  c.fillStyle = "#caa977";
+  c.beginPath(); c.ellipse(x, y - 6, 24, 6, 0, 0, Math.PI * 2); c.fill();
+  c.strokeStyle = "#3a2418"; c.lineWidth = 1;
+  c.beginPath(); c.ellipse(x, y - 4, 26, 8, 0, 0, Math.PI * 2); c.stroke();
+  // tasse fumante sur la table
+  c.fillStyle = "#ffffff";
+  rrect(c, x - 8, y - 12, 8, 6, 1.5); c.fill();
+  c.fillStyle = "#7a3a1f"; c.fillRect(x - 8, y - 11, 8, 1);
+  c.strokeStyle = "rgba(255,255,255,0.6)"; c.lineWidth = 1.2;
+  c.beginPath(); c.moveTo(x - 6, y - 14); c.quadraticCurveTo(x - 5, y - 18, x - 6, y - 22); c.stroke();
+}
+
+/* Tableau Lumina (Glimmer la nuit) */
+function drawFurnPainting(c, x, y) {
+  // cadre
+  c.fillStyle = "#3a2418"; c.fillRect(x - 22, y - 16, 44, 32);
+  c.fillStyle = "#7a4f2c"; c.fillRect(x - 20, y - 14, 40, 28);
+  // toile - ciel etoile
+  const g = c.createLinearGradient(x, y - 13, x, y + 13);
+  g.addColorStop(0, "#1d1a3a"); g.addColorStop(1, "#3a2a4f");
+  c.fillStyle = g; c.fillRect(x - 19, y - 13, 38, 26);
+  // etoiles
+  c.fillStyle = "#fff5b8";
+  c.fillRect(x - 14, y - 9, 1, 1);
+  c.fillRect(x + 8, y - 11, 1, 1);
+  c.fillRect(x + 14, y - 5, 1, 1);
+  c.fillRect(x - 4, y - 7, 1, 1);
+  // glimmer central
+  c.fillStyle = "rgba(212,155,255,0.6)";
+  c.beginPath(); c.arc(x, y + 2, 6, 0, Math.PI * 2); c.fill();
+  c.fillStyle = "#d49bff";
+  c.beginPath(); c.arc(x, y + 2, 3, 0, Math.PI * 2); c.fill();
+  c.fillStyle = "#fff";
+  c.fillRect(x - 1, y + 1, 1, 1);
+  // signature
+  c.fillStyle = "#ffd866"; c.fillRect(x + 10, y + 9, 2, 1);
+}
+
+/* Bibliotheque */
+function drawFurnBookshelf(c, x, y) {
+  // ombre
+  c.fillStyle = "rgba(0,0,0,0.25)";
+  c.beginPath(); c.ellipse(x, y + 24, 26, 4, 0, 0, Math.PI * 2); c.fill();
+  // structure
+  c.fillStyle = "#3a2418"; c.fillRect(x - 24, y - 22, 48, 46);
+  c.fillStyle = "#5a3a1f"; c.fillRect(x - 22, y - 20, 44, 42);
+  // etageres
+  c.fillStyle = "#3a2418";
+  c.fillRect(x - 22, y - 8, 44, 2);
+  c.fillRect(x - 22, y + 6, 44, 2);
+  // livres etage haut
+  const books = [
+    ["#9d2c2c", 5], ["#274f8a", 4], ["#3aa17a", 6], ["#ffd866", 3], ["#7e3a52", 5]
+  ];
+  let bx = x - 20;
+  for (const [col, w] of books) {
+    c.fillStyle = col; c.fillRect(bx, y - 18, w, 9);
+    c.fillStyle = "rgba(0,0,0,0.4)"; c.fillRect(bx + w - 1, y - 18, 1, 9);
+    bx += w + 1;
+  }
+  // etage milieu
+  let bx2 = x - 20;
+  const books2 = [["#3aa17a", 4], ["#9d2c2c", 5], ["#bca7d8", 4], ["#ff8aa6", 5]];
+  for (const [col, w] of books2) {
+    c.fillStyle = col; c.fillRect(bx2, y - 4, w, 9);
+    bx2 += w + 1;
+  }
+  // bas : objets
+  c.fillStyle = "#caa977"; c.fillRect(x - 18, y + 10, 12, 10); // pot
+  c.fillStyle = "#3b6e3a";
+  c.beginPath(); c.arc(x - 12, y + 8, 4, 0, Math.PI * 2); c.fill();
+  c.fillStyle = "#ffd866"; c.fillRect(x + 4, y + 12, 10, 4); // carnet
+  c.fillStyle = "#a87b00"; c.fillRect(x + 4, y + 12, 10, 1);
+}
+
+/* Peluche Sparklit */
+function drawFurnPlush(c, x, y, t) {
+  c.save(); c.translate(x, y);
+  // base etagere sous la peluche
+  c.fillStyle = "#5a3a1f"; c.fillRect(-14, 8, 28, 4);
+  // mini Sparklit  
+  c.scale(0.7, 0.7);
+  drawSparklit(c, SPECIES.sparklit, 12, t * 0.5, false, 0);
+  c.restore();
+}
+
+/* Trophee Warden */
+function drawFurnTrophy(c, x, y, t) {
+  // base
+  c.fillStyle = "#5a3a1f"; c.fillRect(x - 14, y + 14, 28, 6);
+  c.fillStyle = "#7a4f2c"; c.fillRect(x - 14, y + 14, 28, 1);
+  // socle
+  c.fillStyle = "#caa977"; c.fillRect(x - 8, y + 4, 16, 10);
+  c.strokeStyle = "#7a4f2c"; c.lineWidth = 1; c.strokeRect(x - 8, y + 4, 16, 10);
+  // plaque
+  c.fillStyle = "#ffd866"; c.fillRect(x - 6, y + 7, 12, 4);
+  c.fillStyle = "#a87b00";
+  c.fillRect(x - 5, y + 9, 2, 1); c.fillRect(x - 1, y + 9, 2, 1); c.fillRect(x + 3, y + 9, 1, 1);
+  // coupe
+  c.fillStyle = "#ffd866";
+  c.beginPath();
+  c.moveTo(x - 10, y - 14); c.lineTo(x + 10, y - 14); c.lineTo(x + 7, y + 4); c.lineTo(x - 7, y + 4); c.closePath();
+  c.fill();
+  c.strokeStyle = "#a87b00"; c.lineWidth = 1.4; c.stroke();
+  // anses
+  c.strokeStyle = "#ffd866"; c.lineWidth = 2;
+  c.beginPath(); c.arc(x - 12, y - 8, 4, -Math.PI / 2, Math.PI / 2); c.stroke();
+  c.beginPath(); c.arc(x + 12, y - 8, 4, Math.PI / 2, -Math.PI / 2, true); c.stroke();
+  // brillance pulsante
+  const pulse = 0.5 + 0.5 * Math.sin(t * 4);
+  c.fillStyle = "rgba(255,236,160," + (0.3 + pulse * 0.4).toFixed(2) + ")";
+  c.beginPath(); c.arc(x - 4, y - 8, 2, 0, Math.PI * 2); c.fill();
+  // etoiles
+  c.fillStyle = "#fff5b8";
+  c.fillRect(x - 18, y - 16, 1, 1);
+  c.fillRect(x + 16, y - 12, 1, 1);
+}
+
 /* ---------- Tilemaps d'arene par mission ---------- */
 function drawArenaGrassField(b, cap) {
   // tile-based grass
@@ -3073,8 +3794,14 @@ function captureCreature(c, source) {
   const isNew = !albumKnows(c.species.id);
   rememberLumina(c.species.id);
   const suffix = source === "pulse" ? " (onde)" : "";
-  if (isNew) logEvent("Nouveau lien : " + c.species.name + " (Album)", "good");
-  else logEvent(c.species.name + " apaisee, repart libre" + suffix, "good");
+  if (isNew) {
+    logEvent("Nouveau lien : " + c.species.name + " (Album)", "good");
+    Game.coins += 30; // bonus decouverte
+    logEvent("+30 Lumes (decouverte)", "good");
+  } else {
+    logEvent(c.species.name + " apaisee, repart libre" + suffix, "good");
+    Game.coins += 8;
+  }
   spawnParticles(c.x, c.y, c.species.accent, 14);
   Game.capture.line.flashGreen = 0.3;
   SFX.befriend();
@@ -3486,9 +4213,17 @@ function endMission(success) {
   const cap = Game.capture;
   if (cap.ending) return;
   cap.ending = true;
+  let reward = 0;
+  if (success) {
+    reward = 80 + cap.captured * 12;
+    if (cap.mission.fires) reward += 40; // bonus pompier
+    Game.coins += reward;
+    saveGame();
+  }
   const data = {
     success, captured: cap.captured, target: cap.mission.target,
-    energy: cap.ranger.energy, mission: cap.mission, index: cap.index
+    energy: cap.ranger.energy, mission: cap.mission, index: cap.index,
+    reward
   };
   if (success) SFX.success(); else SFX.fail();
   startTransition(() => {
@@ -3532,9 +4267,13 @@ function drawResults() {
   t.fillText(r.mission.title, 320, 140);
 
   t.fillStyle = "#fff"; t.font = "18px 'VT323', monospace"; t.textAlign = "left";
-  t.fillText("Pactes noues :  " + r.captured + " / " + r.target, 130, 190);
-  t.fillText("Energie       :  " + Math.round(r.energy) + "%", 130, 220);
-  t.fillText("Album Lumina  :  " + Game.album.size + " / " + Object.keys(SPECIES).length, 130, 250);
+  t.fillText("Pactes noues :  " + r.captured + " / " + r.target, 130, 184);
+  t.fillText("Energie       :  " + Math.round(r.energy) + "%", 130, 208);
+  t.fillText("Album Lumina  :  " + Game.album.size + " / " + Object.keys(SPECIES).length, 130, 232);
+  if (r.success && r.reward) {
+    t.fillStyle = "#ffd866";
+    t.fillText("+ " + r.reward + " Lumes", 130, 260);
+  }
 
   if (Math.floor(Game.t * 2) % 2 === 0) {
     t.fillStyle = "#ffd866"; t.font = "12px 'Press Start 2P', monospace"; t.textAlign = "center";
@@ -3572,6 +4311,13 @@ function update(dt) {
     case "pickLumina": updatePickLumina(dt); break;
     case "summon": updateSummon(dt); break;
     case "sanctuary": updateSanctuary(dt); break;
+    case "shop": updateShop(dt); break;
+    case "house": updateHouse(dt); break;
+  }
+  // animation +X Lumes
+  if (Game.coinFloat) {
+    Game.coinFloat.t += dt;
+    if (Game.coinFloat.t > 1.6) Game.coinFloat = null;
   }
 }
 function draw() {
@@ -3585,8 +4331,30 @@ function draw() {
     case "pickLumina": drawPickLumina(); break;
     case "summon": drawSummon(); break;
     case "sanctuary": drawSanctuary(); break;
+    case "shop": drawShop(); break;
+    case "house": drawHouse(); break;
   }
+  drawCoinFloat();
   drawTransitionOverlay();
+}
+
+function drawCoinFloat() {
+  const cf = Game.coinFloat; if (!cf) return;
+  const k = clamp(cf.t / 1.6, 0, 1);
+  const alpha = 1 - k;
+  const yOff = k * 30;
+  for (const ctx of [topCtx, botCtx]) {
+    ctx.save(); ctx.textAlign = "right"; ctx.textBaseline = "alphabetic";
+    ctx.fillStyle = "rgba(255,216,102," + alpha.toFixed(2) + ")";
+    ctx.font = "12px 'Press Start 2P', monospace";
+    ctx.fillText("+ " + cf.amount + " L", SCREEN_W - 24, 100 - yOff);
+    if (cf.reason) {
+      ctx.fillStyle = "rgba(207,234,255," + (alpha * 0.8).toFixed(2) + ")";
+      ctx.font = "10px 'VT323', monospace";
+      ctx.fillText(cf.reason, SCREEN_W - 24, 116 - yOff);
+    }
+    ctx.restore();
+  }
 }
 
 let lastTime = performance.now();

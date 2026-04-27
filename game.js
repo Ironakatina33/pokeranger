@@ -139,13 +139,34 @@ function endInputFrame() {
 
 /* ---------- Donnees ---------- */
 const SPECIES = {
-  sparklit: { id: "sparklit", name: "Sparklit", element: "Foudre", body: "#ffd66b", accent: "#fff5b8", dark: "#a36a00", desc: "Renard d'orage. Charge en ligne droite.", radius: 10, speed: 70, temper: 90, dashPower: 2.4 },
-  mossnib: { id: "mossnib", name: "Mossnib", element: "Feuille", body: "#7fd28a", accent: "#caf3b5", dark: "#3b6e3a", desc: "Lent, robuste.", radius: 12, speed: 44, temper: 140, dashPower: 1.6 },
-  fjordle: { id: "fjordle", name: "Fjordle", element: "Vague", body: "#7fb8ff", accent: "#dbecff", dark: "#274f8a", desc: "Glisse en zigzag puis fonce.", radius: 11, speed: 60, temper: 110, dashPower: 2.1 },
-  cindrop: { id: "cindrop", name: "Cindrop", element: "Braise", body: "#ff7f7f", accent: "#ffc4b8", dark: "#8a1f1f", desc: "Erratique. Charges puissantes.", radius: 10, speed: 76, temper: 95, dashPower: 2.6 },
-  voltuff: { id: "voltuff", name: "Voltuff", element: "Foudre", body: "#f4d35e", accent: "#fff4bd", dark: "#8a6a00", desc: "Equilibre. Plusieurs boucles le calment.", radius: 12, speed: 56, temper: 130, dashPower: 1.9 },
-  pebbleon: { id: "pebbleon", name: "Pebbleon", element: "Roc", body: "#a89377", accent: "#dac8a3", dark: "#4d3920", desc: "Lourd et tetu.", radius: 13, speed: 36, temper: 170, dashPower: 1.4 },
-  glimmer: { id: "glimmer", name: "Glimmer", element: "Aurore", body: "#d49bff", accent: "#f2dcff", dark: "#5a2e8c", desc: "Disparait, reapparait.", radius: 10, speed: 64, temper: 105, dashPower: 1.8 }
+  sparklit: { id: "sparklit", name: "Sparklit", element: "Foudre", body: "#ffd66b", accent: "#fff5b8", dark: "#a36a00",
+    desc: "Petit renard d'orage, vif comme un eclair d'ete. Curieux, joueur, mais panique vite.",
+    move: "Etincelle", moveDesc: "Eclaire un passage sombre ou reactive un mecanisme.",
+    radius: 10, speed: 70, temper: 90, dashPower: 2.4 },
+  mossnib: { id: "mossnib", name: "Mossnib", element: "Feuille", body: "#7fd28a", accent: "#caf3b5", dark: "#3b6e3a",
+    desc: "Pousse-mousses paisible. Soigne la nature abimee autour de lui.",
+    move: "Repousse", moveDesc: "Fait reverdir un sol seche ou referme un nid abime.",
+    radius: 12, speed: 44, temper: 140, dashPower: 1.6 },
+  fjordle: { id: "fjordle", name: "Fjordle", element: "Vague", body: "#7fb8ff", accent: "#dbecff", dark: "#274f8a",
+    desc: "Loutre des courants. Joue avec l'ecume, adore les enfants.",
+    move: "Ondee", moveDesc: "Eteint des flammes ou nettoie une source polluee.",
+    radius: 11, speed: 60, temper: 110, dashPower: 2.1 },
+  cindrop: { id: "cindrop", name: "Cindrop", element: "Braise", body: "#ff7f7f", accent: "#ffc4b8", dark: "#8a1f1f",
+    desc: "Souffle a la fois chaud et timide. Nervosite explosive si on le brusque.",
+    move: "Veilleuse", moveDesc: "Allume un feu de camp ou fait fondre une croute de cendres.",
+    radius: 10, speed: 76, temper: 95, dashPower: 2.6 },
+  voltuff: { id: "voltuff", name: "Voltuff", element: "Foudre", body: "#f4d35e", accent: "#fff4bd", dark: "#8a6a00",
+    desc: "Garde paisible des clairieres. Plus tetu que dangereux.",
+    move: "Impulsion", moveDesc: "Fait redemarrer un pont mecanique ou un treuil rouille.",
+    radius: 12, speed: 56, temper: 130, dashPower: 1.9 },
+  pebbleon: { id: "pebbleon", name: "Pebbleon", element: "Roc", body: "#a89377", accent: "#dac8a3", dark: "#4d3920",
+    desc: "Vieux compagnon des sentiers. Lent, fiable, sage.",
+    move: "Pousse-Roc", moveDesc: "Deplace un rocher qui bloque un chemin ou un nid.",
+    radius: 13, speed: 36, temper: 170, dashPower: 1.4 },
+  glimmer: { id: "glimmer", name: "Glimmer", element: "Aurore", body: "#d49bff", accent: "#f2dcff", dark: "#5a2e8c",
+    desc: "Lueur des soirs. Apparait quand on en a vraiment besoin.",
+    move: "Apaisement", moveDesc: "Calme d'un coup une autre creature paniquee proche.",
+    radius: 10, speed: 64, temper: 105, dashPower: 1.8 }
 };
 
 const CHARACTERS = {
@@ -158,69 +179,76 @@ const CHARACTERS = {
 };
 
 const STORY_INTRO = [
-  { speaker: null, text: "VERDIS. Un archipel ou la nature parle a qui sait ecouter." },
-  { speaker: null, text: "Les Wardens veillent sur ses esprits, appeles Lumina." },
-  { speaker: null, text: "Mais une ombre, le Black Tide, agite ces creatures..." },
+  { speaker: null, text: "VERDIS. Un archipel vivant ou l'on apprend tot a ecouter la nature." },
+  { speaker: null, text: "Les Nature Wardens y veillent: ni dresseurs, ni chasseurs." },
+  { speaker: null, text: "Juste des gardiens qui aident, sans dominer." },
+  { speaker: null, text: "Mais une ombre, le Black Tide, exploite la faune et abime les forets..." },
   { speaker: "reva", text: "Cadet, tu es enfin la. Bienvenue a l'Avant-Poste Halcyon." },
-  { speaker: "reva", text: "Je suis le Capitaine Reva. Voici ton premier Loop Styler." },
-  { speaker: "player", text: "...Je suis pret. Donnez-moi mes ordres." },
-  { speaker: "reva", text: "Tu vas tracer une boucle complete autour des Lumina pour les apaiser." },
-  { speaker: "reva", text: "Maintiens le clic ou ton doigt et reviens au point de depart." },
-  { speaker: "reva", text: "Va voir Tomo dehors. Il t'expliquera sur le terrain." }
+  { speaker: "reva", text: "Je suis le Capitaine Reva. Voici ton Loop Styler." },
+  { speaker: "reva", text: "Le styler ne sert pas a capturer. Il sert a calmer." },
+  { speaker: "reva", text: "Trace une boucle autour d'une Lumina effrayee, et tu gagneras sa confiance." },
+  { speaker: "reva", text: "Elle t'aidera un instant... puis elle retournera dans son habitat. Toujours." },
+  { speaker: "player", text: "Aider sans posseder. Compris, Capitaine." },
+  { speaker: "reva", text: "Bien. Ton journal, l'Album Lumina, retiendra tous ceux que tu rencontreras." },
+  { speaker: "reva", text: "Tu peux l'ouvrir au hub avec B. Va voir Tomo dehors, il t'expliquera." }
 ];
 
 const MISSIONS = [
   {
     id: "m1", title: "Mission 01 - Bois d'Halcyon",
-    brief: "Trois Sparklits sont nerveux pres de l'avant-poste. Apaise-les.",
+    brief: "Trois Sparklits paniques pres de l'avant-poste. Apaise-les, qu'ils rentrent au calme.",
     target: 3, timeLimit: 150,
     species: ["sparklit", "sparklit", "sparklit", "mossnib"], spawnExtra: 2,
     intro: [
-      { speaker: "tomo", text: "Alors c'est toi le nouveau ! Reva m'a tout dit." },
-      { speaker: "tomo", text: "Tu marches autour de la creature, tu boucles. Pas de panique." },
-      { speaker: "tomo", text: "Si elle charge, esquive. Casse pas la ligne." },
-      { speaker: "player", text: "Compris." },
-      { speaker: "tomo", text: "Allez, montre-moi ca !" }
+      { speaker: "tomo", text: "Salut, le nouveau ! Trois Sparklits courent dans tous les sens depuis hier soir." },
+      { speaker: "tomo", text: "Ils ne sont pas mechants, juste effrayes. Marche autour d'eux, doucement, et boucle." },
+      { speaker: "tomo", text: "Si tu les brusques, ils chargent par reflexe. Casse pas ta ligne." },
+      { speaker: "player", text: "Apaiser, pas attraper. Je gere." },
+      { speaker: "tomo", text: "Voila l'esprit Warden ! Vas-y." }
     ],
     success: [
-      { speaker: "tomo", text: "Wow, propre ! Bon coup de styler." },
-      { speaker: "reva", text: "Bon travail, cadet. Repos." }
+      { speaker: "tomo", text: "Regarde-les rentrer chez eux, tranquilles. C'est ca, le metier." },
+      { speaker: "reva", text: "Bon travail, cadet. Tu as ecoute avant d'agir." }
     ],
-    fail: [{ speaker: "tomo", text: "Aie. Pas grave, on retente." }]
+    fail: [{ speaker: "tomo", text: "Pas grave, on retente. Ils sentent le stress, respire d'abord." }]
   },
   {
     id: "m2", title: "Mission 02 - Crique de Corail",
-    brief: "Halden a besoin de captures de Fjordles pour etudier la maree.",
+    brief: "Une nappe etrange s'echoue sur les coraux. Apaise les Fjordles affoles, aide Halden a comprendre.",
     target: 4, timeLimit: 180,
     species: ["fjordle", "fjordle", "fjordle", "fjordle", "glimmer", "mossnib"], spawnExtra: 2,
     intro: [
-      { speaker: "halden", text: "Ah, cadet ! Mes Fjordles s'agitent depuis hier." },
-      { speaker: "halden", text: "Je soupconne le Black Tide. Capture-en autant que possible." },
-      { speaker: "player", text: "Je m'en occupe." }
+      { speaker: "halden", text: "Ah, cadet ! Une coulee crimson contamine la crique. Les Fjordles paniquent." },
+      { speaker: "halden", text: "Aide-les a se calmer, je veux observer leurs ondes une fois apaises." },
+      { speaker: "halden", text: "Surtout, ne les capture pas: laisse-les repartir vers le large." },
+      { speaker: "player", text: "Je passe les voir, un par un." }
     ],
     success: [
-      { speaker: "halden", text: "Fascinant ! Une energie crimson sature leurs ondes." },
-      { speaker: "reva", text: "Crimson... Black Tide est ici. Tiens-toi pret." }
+      { speaker: "halden", text: "Incroyable. Une fois calmes, ils m'ont meme designe la source." },
+      { speaker: "halden", text: "C'est bien le Black Tide. Du raffinage clandestin de coraux." },
+      { speaker: "reva", text: "Tiens-toi pret, cadet. La suite ne sera pas un balade." }
     ],
-    fail: [{ speaker: "halden", text: "Pas concluant. On reessaie." }]
+    fail: [{ speaker: "halden", text: "Pas concluant. Reessaie, j'ai besoin de leurs donnees apaisees." }]
   },
   {
     id: "m3", title: "Mission 03 - Crete des Cendres",
-    brief: "Le Black Tide pousse les Cindrops a la rage. Disperse-les.",
-    target: 5, timeLimit: 210,
+    brief: "Foyers d'incendie sur la crete, Cindrops affoles. Eteins le feu et apaise les Lumina.",
+    target: 5, timeLimit: 240,
     species: ["cindrop", "cindrop", "cindrop", "cindrop", "voltuff", "pebbleon"], spawnExtra: 3,
+    fires: 3,
     intro: [
       { speaker: "shade", text: "Tiens, tiens. Une Warden seule sur la Crete." },
-      { speaker: "shade", text: "Mes Cindrops sont... tres en colere. Bonne chance." },
-      { speaker: "reva", text: "Cadet, ne le suis pas. Concentre-toi sur les Lumina." },
-      { speaker: "player", text: "On va tous les calmer." }
+      { speaker: "shade", text: "Le feu fait fuir les Cindrops vers ma cargaison. Pratique, non ?" },
+      { speaker: "reva", text: "Cadet, eteins ces foyers d'abord. Un Fjordle apaise sait faire ca." },
+      { speaker: "reva", text: "Une fois lie, place-toi pres d'un foyer et appuie B pour son Ondee." },
+      { speaker: "player", text: "Forets sauvees, Cindrops apaises. On y va." }
     ],
     success: [
-      { speaker: "reva", text: "Fenomenal. Tu as prouve ce que vaut un Warden." },
-      { speaker: "tomo", text: "Bienvenue dans l'equipe, pour de vrai !" },
-      { speaker: "halden", text: "Le Black Tide se replie. Mais ce n'est qu'un debut..." }
+      { speaker: "reva", text: "La crete respire de nouveau. Tu n'as rien capture, tu as protege." },
+      { speaker: "tomo", text: "Bienvenue dans l'equipe, pour de vrai cette fois !" },
+      { speaker: "halden", text: "Le Black Tide se replie. Mais d'autres iles attendent..." }
     ],
-    fail: [{ speaker: "reva", text: "Replie-toi, cadet. On reprendra la zone." }]
+    fail: [{ speaker: "reva", text: "Repli, cadet. On revient a tete froide." }]
   }
 ];
 
@@ -230,7 +258,9 @@ const Game = {
   t: 0,
   cameraShake: 0,
   flags: { introDone: false, missionUnlocked: 0 },
-  capturedTotal: 0,
+  bondsTotal: 0,
+  album: new Set(),
+  albumSelected: 0,
   hub: null,
   capture: null,
   dialogue: null,
@@ -238,6 +268,8 @@ const Game = {
 };
 
 function switchState(s) { Game.state = s; }
+function rememberLumina(id) { Game.album.add(id); }
+function albumKnows(id) { return Game.album.has(id); }
 
 /* ---------- Hub map ---------- */
 function buildHub() {
@@ -550,10 +582,10 @@ function drawTitle() {
   b.fillStyle = "#79e3c4"; b.font = "12px 'Press Start 2P', monospace"; b.textAlign = "center";
   b.fillText("CONTROLES", 320, 50);
   b.fillStyle = "#cfeaff"; b.font = "16px 'VT323', monospace";
-  b.fillText("Deplacement: ZQSD ou Fleches  |  D-pad sur mobile", 320, 80);
-  b.fillText("A (Espace/Entree): Action / Confirmer", 320, 100);
-  b.fillText("B (Maj/Echap): Annuler / Onde Lumina", 320, 120);
-  b.fillText("Capture: maintiens clic ou doigt et trace une boucle.", 320, 140);
+  b.fillText("Deplacement : ZQSD / Fleches  -  D-pad sur mobile", 320, 80);
+  b.fillText("A (Espace/Entree) : Parler / Confirmer", 320, 100);
+  b.fillText("B (Maj/Echap) : Album Lumina / Onde apaisante", 320, 120);
+  b.fillText("Apaiser : maintiens clic ou doigt et trace une boucle.", 320, 140);
 
   const list = ["sparklit", "mossnib", "fjordle", "cindrop", "voltuff", "glimmer", "pebbleon"];
   for (let i = 0; i < list.length; i++) {
@@ -605,6 +637,109 @@ function updateHub(dt) {
       });
     }
   }
+  if (Input.bPressed) { Game.albumSelected = 0; switchState("album"); }
+}
+
+/* ---------- ALBUM LUMINA ---------- */
+function updateAlbum(dt) {
+  Game.t += dt;
+  const list = Object.keys(SPECIES);
+  if (Input.pressed.has("ArrowLeft") || Input.pressed.has("KeyA") || Input.pressed.has("KeyQ"))
+    Game.albumSelected = (Game.albumSelected + list.length - 1) % list.length;
+  if (Input.pressed.has("ArrowRight") || Input.pressed.has("KeyD"))
+    Game.albumSelected = (Game.albumSelected + 1) % list.length;
+  if (Input.pressed.has("ArrowUp") || Input.pressed.has("KeyW") || Input.pressed.has("KeyZ"))
+    Game.albumSelected = (Game.albumSelected + list.length - 4) % list.length;
+  if (Input.pressed.has("ArrowDown") || Input.pressed.has("KeyS"))
+    Game.albumSelected = (Game.albumSelected + 4) % list.length;
+  if (Input.bPressed || Input.pressed.has("Escape")) switchState("hub");
+}
+function drawAlbum() {
+  const list = Object.keys(SPECIES);
+  const sel = list[Game.albumSelected];
+  const sp = SPECIES[sel];
+  const known = albumKnows(sel);
+
+  const t = topCtx;
+  const g = t.createLinearGradient(0, 0, 0, SCREEN_H);
+  g.addColorStop(0, "#1d3a5e"); g.addColorStop(1, "#0d1e34");
+  t.fillStyle = g; t.fillRect(0, 0, SCREEN_W, SCREEN_H);
+
+  t.fillStyle = "#0d2236"; rrect(t, 24, 20, 592, 52, 10); t.fill();
+  t.fillStyle = "#ffd866"; t.font = "16px 'Press Start 2P', monospace"; t.textAlign = "left";
+  t.fillText("ALBUM LUMINA", 44, 50);
+  t.fillStyle = "#9bdce0"; t.font = "14px 'VT323', monospace"; t.textAlign = "right";
+  t.fillText("Decouverts : " + Game.album.size + " / " + list.length, 596, 50);
+
+  // panneau detail
+  t.fillStyle = "#0d2236"; rrect(t, 24, 88, 592, 280, 10); t.fill();
+
+  if (known) {
+    // grand portrait
+    t.save(); t.translate(140, 220); t.scale(3.5, 3.5);
+    drawCreature(t, sp, 0, 0, Game.t, 0, false, false);
+    t.restore();
+    // texte
+    t.fillStyle = sp.body; t.font = "20px 'Press Start 2P', monospace"; t.textAlign = "left";
+    t.fillText(sp.name.toUpperCase(), 240, 130);
+    t.fillStyle = "#9bdce0"; t.font = "12px 'Press Start 2P', monospace";
+    t.fillText("ELEMENT : " + sp.element.toUpperCase(), 240, 154);
+    t.fillStyle = "#cfeaff"; t.font = "16px 'VT323', monospace";
+    wrapText(t, sp.desc, 240, 184, 360, 20);
+    t.fillStyle = "#ffd866"; t.font = "12px 'Press Start 2P', monospace";
+    t.fillText("DON DE TERRAIN", 240, 260);
+    t.fillStyle = "#fff"; t.font = "16px 'VT323', monospace";
+    t.fillText(sp.move, 240, 282);
+    t.fillStyle = "#cfeaff";
+    wrapText(t, sp.moveDesc, 240, 304, 360, 20);
+  } else {
+    t.fillStyle = "#1f2c44"; t.beginPath(); t.arc(140, 220, 56, 0, Math.PI * 2); t.fill();
+    t.fillStyle = "#0a1729"; t.beginPath(); t.arc(140, 220, 38, 0, Math.PI * 2); t.fill();
+    t.fillStyle = "#3a4d6b"; t.font = "60px 'Press Start 2P', monospace"; t.textAlign = "center";
+    t.fillText("?", 140, 240);
+    t.fillStyle = "#6b7892"; t.font = "16px 'VT323', monospace"; t.textAlign = "left";
+    t.fillText("Lumina inconnue.", 240, 200);
+    t.fillText("Crois sa route et apaise-la pour completer cette page.", 240, 224);
+  }
+
+  // hint
+  t.fillStyle = "#9bdce0"; t.font = "10px 'Press Start 2P', monospace"; t.textAlign = "center";
+  t.fillText("FLECHES : NAVIGUER     B : RETOUR", 320, 380);
+
+  // bottom: mosaique
+  const b = botCtx;
+  const g2 = b.createLinearGradient(0, 0, 0, SCREEN_H);
+  g2.addColorStop(0, "#1c4a3c"); g2.addColorStop(1, "#0f2a26");
+  b.fillStyle = g2; b.fillRect(0, 0, SCREEN_W, SCREEN_H);
+
+  b.fillStyle = "#ffd866"; b.font = "12px 'Press Start 2P', monospace"; b.textAlign = "center";
+  b.fillText("BESTIAIRE DE VERDIS", 320, 36);
+
+  const cols = 4;
+  const cellW = 140, cellH = 130;
+  const startX = (SCREEN_W - cellW * cols) / 2 + cellW / 2;
+  const startY = 80;
+  for (let i = 0; i < list.length; i++) {
+    const sp2 = SPECIES[list[i]];
+    const cx = startX + (i % cols) * cellW;
+    const cy = startY + Math.floor(i / cols) * cellH;
+    const isSel = i === Game.albumSelected;
+    const ok = albumKnows(list[i]);
+    b.fillStyle = isSel ? "#ffd86640" : "#0d223699";
+    rrect(b, cx - cellW / 2 + 8, cy - 50, cellW - 16, cellH - 14, 8); b.fill();
+    if (isSel) { b.strokeStyle = "#ffd866"; b.lineWidth = 2; rrect(b, cx - cellW / 2 + 8, cy - 50, cellW - 16, cellH - 14, 8); b.stroke(); }
+    if (ok) {
+      drawCreature(b, sp2, cx, cy, Game.t * 0.5 + i, 0, false, false);
+      b.fillStyle = "#fff"; b.font = "10px 'Press Start 2P', monospace"; b.textAlign = "center";
+      b.fillText(sp2.name, cx, cy + 38);
+    } else {
+      b.fillStyle = "#1f2c44"; b.beginPath(); b.arc(cx, cy, 14, 0, Math.PI * 2); b.fill();
+      b.fillStyle = "#3a4d6b"; b.font = "16px 'Press Start 2P', monospace"; b.textAlign = "center";
+      b.fillText("?", cx, cy + 6);
+      b.fillStyle = "#6b7892"; b.font = "10px 'Press Start 2P', monospace";
+      b.fillText("INCONNU", cx, cy + 38);
+    }
+  }
 }
 function drawHub() {
   const t = topCtx;
@@ -634,7 +769,9 @@ function drawHub() {
   }
 
   t.fillStyle = "#9bdce0"; t.font = "12px 'VT323', monospace"; t.textAlign = "right";
-  t.fillText("Captures totales: " + Game.capturedTotal, 600, 370);
+  t.fillText("Liens noues : " + Game.bondsTotal + "  -  Album: " + Game.album.size + "/" + Object.keys(SPECIES).length, 600, 370);
+  t.fillStyle = "#ffd866"; t.font = "10px 'Press Start 2P', monospace";
+  t.fillText("B : ALBUM LUMINA", 600, 350);
 
   const b = botCtx;
   b.fillStyle = "#000"; b.fillRect(0, 0, SCREEN_W, SCREEN_H);
@@ -679,12 +816,36 @@ function setupCapture(mission, index) {
     mission, index,
     timeLeft: mission.timeLimit, captured: 0,
     creatures: [], particles: [], terrain: [], log: [],
+    fires: [], firesLeft: 0, fireDamageT: 0,
     line: { active: false, points: [], cooldown: 0, flashRed: 0, flashGreen: 0, pointerId: null },
     ranger: { x: SCREEN_W / 2, y: SCREEN_H / 2, dir: "down", anim: 0, energy: 100, styler: 100, invuln: 0, pulseCd: 0, pulseWave: 0 }
   };
-  for (let i = 0; i < 22; i++) {
-    cap.terrain.push({ x: rand(0, SCREEN_W), y: rand(0, SCREEN_H), rx: rand(10, 26), ry: rand(8, 20), rot: rand(0, Math.PI), color: Math.random() > 0.5 ? "#3e7e3a55" : "#5a8e5d55" });
+  // decor varie selon mission
+  const decorPalette = mission.id === "m2"
+    ? ["#3a78b855", "#5fb1c455"]
+    : mission.id === "m3"
+      ? ["#7a4a2855", "#a85a3455"]
+      : ["#3e7e3a66", "#5fa86577"];
+  for (let i = 0; i < 26; i++) {
+    cap.terrain.push({
+      x: rand(0, SCREEN_W), y: rand(0, SCREEN_H),
+      rx: rand(8, 22), ry: rand(6, 16), rot: rand(0, Math.PI),
+      color: decorPalette[Math.floor(Math.random() * decorPalette.length)]
+    });
   }
+  // foyers d'incendie
+  if (mission.fires) {
+    for (let i = 0; i < mission.fires; i++) {
+      let fx, fy;
+      for (let tries = 0; tries < 10; tries++) {
+        fx = rand(80, SCREEN_W - 80); fy = rand(80, SCREEN_H - 80);
+        if (dist(fx, fy, SCREEN_W / 2, SCREEN_H / 2) > 90) break;
+      }
+      cap.fires.push({ x: fx, y: fy, alive: true, anim: rand(0, 6), radius: 22 });
+    }
+    cap.firesLeft = mission.fires;
+  }
+
   const list = mission.species;
   const total = mission.target + (mission.spawnExtra || 1);
   for (let i = 0; i < total; i++) cap.creatures.push(spawnCreature(list[i % list.length], cap));
@@ -717,12 +878,19 @@ function captureCreature(c, source) {
   if (c.captured) return;
   c.captured = true; c.capturedT = 0;
   Game.capture.captured += 1;
-  Game.capturedTotal += 1;
+  Game.bondsTotal += 1;
+  const isNew = !albumKnows(c.species.id);
+  rememberLumina(c.species.id);
   const suffix = source === "pulse" ? " (onde)" : "";
-  logEvent(c.species.name + " capturee" + suffix, "good");
+  if (isNew) logEvent("Nouveau lien : " + c.species.name + " (Album)", "good");
+  else logEvent(c.species.name + " apaisee, repart libre" + suffix, "good");
   spawnParticles(c.x, c.y, c.species.accent, 14);
   Game.capture.line.flashGreen = 0.3;
-  if (Game.capture.captured >= Game.capture.mission.target) endMission(true);
+  if (Game.capture.captured >= Game.capture.mission.target) {
+    if (Game.capture.mission.fires && Game.capture.firesLeft > 0) {
+      logEvent("Eteins encore les foyers !", "warn");
+    } else endMission(true);
+  }
 }
 function triggerPulse() {
   const cap = Game.capture;
@@ -739,7 +907,21 @@ function triggerPulse() {
     c.temper -= 12; c.hitFlash = 0.3;
     if (c.temper <= 0) captureCreature(c, "pulse");
   }
-  logEvent("Onde Lumina diffusee" + (touched ? " (" + touched + " touchee[s])" : ""));
+  // Don de terrain Fjordle: si Fjordle dans l'Album, l'onde eteint aussi un foyer proche
+  if (albumKnows("fjordle") && cap.fires) {
+    for (const f of cap.fires) {
+      if (!f.alive) continue;
+      if (dist(f.x, f.y, cap.ranger.x, cap.ranger.y) < 140) {
+        f.alive = false; cap.firesLeft--;
+        spawnParticles(f.x, f.y, "#9bdce0", 18);
+        spawnParticles(f.x, f.y, "#ffffff", 8);
+        logEvent("Foyer eteint (Ondee de Fjordle)", "good");
+        if (cap.firesLeft === 0 && cap.captured >= cap.mission.target) endMission(true);
+        break;
+      }
+    }
+  }
+  logEvent("Onde Lumina diffusee" + (touched ? " (" + touched + " creature[s])" : ""));
 }
 function breakLine(reason) {
   const cap = Game.capture;
@@ -797,6 +979,19 @@ function updateCapture(dt) {
   cap.line.flashRed = Math.max(0, cap.line.flashRed - dt * 2);
   cap.line.flashGreen = Math.max(0, cap.line.flashGreen - dt * 2.4);
   Game.cameraShake = Math.max(0, Game.cameraShake - dt * 30);
+
+  // foyers
+  if (cap.fires.length) {
+    cap.fireDamageT -= dt;
+    for (const f of cap.fires) {
+      if (!f.alive) continue;
+      f.anim += dt;
+      if (dist(f.x, f.y, cap.ranger.x, cap.ranger.y) < f.radius + 6 && cap.fireDamageT <= 0) {
+        applyDamage(4, "Tu te brules au foyer");
+        cap.fireDamageT = 0.8;
+      }
+    }
+  }
 
   if (Input.bPressed) triggerPulse();
 
@@ -920,7 +1115,7 @@ function drawCapture() {
 
   t.fillStyle = "#0d2236"; rrect(t, 332, 96, 282, 46, 6); t.fill();
   t.fillStyle = "#ffd866"; t.font = "10px 'Press Start 2P', monospace"; t.textAlign = "left";
-  t.fillText("CAPTURES", 348, 116);
+  t.fillText("PACTES NOUES", 348, 116);
   t.fillStyle = "#fff"; t.font = "22px 'Press Start 2P', monospace";
   t.fillText(cap.captured + "/" + cap.mission.target, 348, 140);
 
@@ -934,11 +1129,19 @@ function drawCapture() {
   t.fillText(m + ":" + s, 348, 194);
 
   t.fillStyle = "#0d2236"; rrect(t, 478, 152, 138, 46, 6); t.fill();
-  t.fillStyle = "#9bdce0"; t.font = "10px 'Press Start 2P', monospace";
-  t.fillText("ONDE  (B)", 494, 172);
-  t.fillStyle = cap.ranger.pulseCd > 0 ? "#6b7892" : "#79e3c4";
-  t.font = "16px 'Press Start 2P', monospace";
-  t.fillText(cap.ranger.pulseCd > 0 ? Math.ceil(cap.ranger.pulseCd) + "s" : "PRET", 494, 192);
+  if (cap.fires.length) {
+    t.fillStyle = "#ff8a6b"; t.font = "10px 'Press Start 2P', monospace";
+    t.fillText("FOYERS", 494, 172);
+    t.fillStyle = cap.firesLeft === 0 ? "#79e3c4" : "#ffd866";
+    t.font = "20px 'Press Start 2P', monospace";
+    t.fillText(cap.firesLeft + "/" + cap.fires.length, 494, 194);
+  } else {
+    t.fillStyle = "#9bdce0"; t.font = "10px 'Press Start 2P', monospace";
+    t.fillText("ONDE  (B)", 494, 172);
+    t.fillStyle = cap.ranger.pulseCd > 0 ? "#6b7892" : "#79e3c4";
+    t.font = "16px 'Press Start 2P', monospace";
+    t.fillText(cap.ranger.pulseCd > 0 ? Math.ceil(cap.ranger.pulseCd) + "s" : "PRET", 494, 192);
+  }
 
   t.fillStyle = "#0d2236"; rrect(t, 16, 210, 608, 158, 8); t.fill();
   t.fillStyle = "#ffd866"; t.font = "10px 'Press Start 2P', monospace";
@@ -956,15 +1159,70 @@ function drawCapture() {
   b.save();
   if (shake > 0) b.translate(rand(-shake, shake) * 0.3, rand(-shake, shake) * 0.3);
 
+  // ambiance lumineuse selon mission
   const arenaG = b.createLinearGradient(0, 0, 0, SCREEN_H);
-  arenaG.addColorStop(0, "#3a7a3e"); arenaG.addColorStop(1, "#1f4a25");
+  if (cap.mission.id === "m2") {
+    arenaG.addColorStop(0, "#7ad6e8"); arenaG.addColorStop(0.55, "#f0e4a8"); arenaG.addColorStop(1, "#dca96a");
+  } else if (cap.mission.id === "m3") {
+    arenaG.addColorStop(0, "#f3a25a"); arenaG.addColorStop(0.55, "#c46a3a"); arenaG.addColorStop(1, "#5a2e22");
+  } else {
+    arenaG.addColorStop(0, "#9bd368"); arenaG.addColorStop(0.5, "#69b34c"); arenaG.addColorStop(1, "#3e8a40");
+  }
   b.fillStyle = arenaG; b.fillRect(0, 0, SCREEN_W, SCREEN_H);
+
+  // touffes / herbes / fleurs
   for (const tt of cap.terrain) {
     b.save(); b.translate(tt.x, tt.y); b.rotate(tt.rot);
     b.fillStyle = tt.color;
     b.beginPath(); b.ellipse(0, 0, tt.rx, tt.ry, 0, 0, Math.PI * 2); b.fill();
     b.restore();
   }
+  // brins d'herbe (verts vifs) sur missions herbeuses
+  if (cap.mission.id !== "m2") {
+    b.strokeStyle = cap.mission.id === "m3" ? "#7c3a1455" : "#2c5d2466";
+    b.lineWidth = 2; b.lineCap = "round";
+    for (let i = 0; i < 60; i++) {
+      const x = (i * 113 + (cap.mission.id === "m3" ? 23 : 7)) % SCREEN_W;
+      const y = (i * 71 + 31) % SCREEN_H;
+      const sw = Math.sin(Game.t * 1.4 + i) * 1.5;
+      b.beginPath(); b.moveTo(x, y); b.lineTo(x + sw, y - 4); b.stroke();
+    }
+  }
+  // petites fleurs jaunes/blanches
+  for (let i = 0; i < 14; i++) {
+    const x = ((i * 191) % SCREEN_W);
+    const y = ((i * 137 + 47) % SCREEN_H);
+    const col = i % 3 === 0 ? "#ffe66b" : i % 3 === 1 ? "#ffffff" : "#ffb3c7";
+    b.fillStyle = col; b.beginPath(); b.arc(x, y, 1.6, 0, Math.PI * 2); b.fill();
+  }
+
+  // foyers d'incendie
+  for (const f of cap.fires) {
+    if (!f.alive) continue;
+    // halo
+    const grad = b.createRadialGradient(f.x, f.y, 4, f.x, f.y, f.radius + 12);
+    grad.addColorStop(0, "#ffd866cc"); grad.addColorStop(0.6, "#ff7a3940"); grad.addColorStop(1, "#ff3a3a00");
+    b.fillStyle = grad;
+    b.beginPath(); b.arc(f.x, f.y, f.radius + 14, 0, Math.PI * 2); b.fill();
+    // braises au sol
+    b.fillStyle = "#5a1a14";
+    b.beginPath(); b.ellipse(f.x, f.y + 8, f.radius * 0.9, 5, 0, 0, Math.PI * 2); b.fill();
+    // flammes
+    const flick = Math.sin(f.anim * 8) * 2;
+    b.fillStyle = "#ff8a3a";
+    b.beginPath(); b.moveTo(f.x - 10, f.y + 6);
+    b.quadraticCurveTo(f.x - 14 + flick, f.y - 10, f.x, f.y - 22 + flick * 0.6);
+    b.quadraticCurveTo(f.x + 14 - flick, f.y - 10, f.x + 10, f.y + 6);
+    b.closePath(); b.fill();
+    b.fillStyle = "#ffd866";
+    b.beginPath(); b.moveTo(f.x - 5, f.y + 4);
+    b.quadraticCurveTo(f.x - 7 + flick, f.y - 6, f.x, f.y - 16);
+    b.quadraticCurveTo(f.x + 7 - flick, f.y - 6, f.x + 5, f.y + 4);
+    b.closePath(); b.fill();
+    b.fillStyle = "#fff5b8";
+    b.beginPath(); b.arc(f.x, f.y - 6, 2, 0, Math.PI * 2); b.fill();
+  }
+
   b.strokeStyle = "#ffd86640"; b.lineWidth = 2;
   b.strokeRect(2, 2, SCREEN_W - 4, SCREEN_H - 4);
 
@@ -1052,9 +1310,9 @@ function drawResults() {
   t.fillText(r.mission.title, 320, 140);
 
   t.fillStyle = "#fff"; t.font = "18px 'VT323', monospace"; t.textAlign = "left";
-  t.fillText("Captures :  " + r.captured + " / " + r.target, 130, 190);
-  t.fillText("Energie  :  " + Math.round(r.energy) + "%", 130, 220);
-  t.fillText("Total des captures : " + Game.capturedTotal, 130, 250);
+  t.fillText("Pactes noues :  " + r.captured + " / " + r.target, 130, 190);
+  t.fillText("Energie       :  " + Math.round(r.energy) + "%", 130, 220);
+  t.fillText("Album Lumina  :  " + Game.album.size + " / " + Object.keys(SPECIES).length, 130, 250);
 
   if (Math.floor(Game.t * 2) % 2 === 0) {
     t.fillStyle = "#ffd866"; t.font = "12px 'Press Start 2P', monospace"; t.textAlign = "center";
@@ -1081,6 +1339,7 @@ function update(dt) {
   switch (Game.state) {
     case "title": updateTitle(dt); break;
     case "hub": updateHub(dt); break;
+    case "album": updateAlbum(dt); break;
     case "dialogue": updateDialogue(dt); break;
     case "capture": updateCapture(dt); break;
     case "results": updateResults(dt); break;
@@ -1090,6 +1349,7 @@ function draw() {
   switch (Game.state) {
     case "title": drawTitle(); break;
     case "hub": drawHub(); break;
+    case "album": drawAlbum(); break;
     case "dialogue": drawDialogue(); break;
     case "capture": drawCapture(); break;
     case "results": drawResults(); break;

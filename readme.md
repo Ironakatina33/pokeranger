@@ -1,8 +1,14 @@
 # Nature Wardens — Loop of Tides
 
-Prototype web fan-made (gratuit) qui rejoue le **gameplay de capture en boucle** des jeux de ranger
-au stylet, sur deux écrans façon console portable, avec un **univers, des personnages et des créatures
-100% originaux** pour rester propre côté droits.
+Prototype web fan-made (gratuit) d'aventure d'action-exploration centrée sur la **protection
+de la nature**, l'**entraide** et la résolution de problèmes. Tu n'attrapes pas, tu **apaises**
+et tu **noues un lien temporaire** avec les créatures sauvages, qui retournent ensuite
+librement dans leur habitat.
+
+## Philosophie
+
+> Aider sans dominer. Le Ranger n'est pas un dresseur : il observe, il comprend, il intervient
+> au bon moment. Les Lumina ne sont pas des trophées, mais des partenaires de confiance.
 
 ## Lancer le jeu
 
@@ -12,26 +18,31 @@ Ouvre `index.html` dans un navigateur moderne. Aucune dépendance, aucun serveur
 
 - **Région** : Verdis Archipelago.
 - **Hub** : Avant-Poste Halcyon (Halcyon Outpost).
-- **Organisation** : les Nature Wardens, gardiens des esprits Lumina.
-- **Antagonistes** : le Black Tide, mené par Shade.
-- **Personnages** : Cadet (toi), Cap. Reva (mentor), Tomo (rival), Dr. Halden (chercheur), Bran (éleveur).
+- **Organisation** : les Nature Wardens, gardiens du vivant.
+- **Antagonistes** : le Black Tide, qui exploite la faune et abîme les forêts.
+- **Personnages** : Cadet (toi), Cap. Reva (mentor), Tomo (camarade), Dr. Halden (chercheur), Bran (éleveur), Shade (antagoniste).
 
 ## Contenu
 
-- Écran-titre animé.
-- Cinématique d'intro narrative.
+- Écran-titre animé et intro narrative.
 - Hub explorable avec PNJ et dialogues.
-- 3 missions scénarisées, chacune avec dialogues d'intro / fin.
-- 7 espèces de Lumina avec comportements distincts (Sparklit, Mossnib, Fjordle, Cindrop, Voltuff, Pebbleon, Glimmer).
-- Mode capture: tracer une boucle complète autour des créatures, esquiver leurs charges.
-- Onde Lumina (compétence partenaire), jauges Énergie / Styler, chrono de mission.
+- 3 missions scénarisées avec objectifs concrets : apaiser une faune affolée, aider un chercheur, éteindre des foyers d'incendie.
+- **Album Lumina** (collection) : 7 espèces à découvrir, chacune avec un **don de terrain** unique (éclairer, repousser, ondée, veilleuse, impulsion, pousse-roc, apaisement).
+- Mécanique de **lien temporaire** : tu traces une boucle pour apaiser une créature, elle t'aide, puis repart libre.
+- Foyers d'incendie à éteindre avec l'**Ondée** d'un Fjordle apaisé (mission 3).
 
 ## Contrôles
 
-- **Déplacement** : `ZQSD` ou flèches (D-pad sur mobile).
-- **A** : `Espace` / `Entrée` (parler, valider).
-- **B** : `Maj` / `Échap` (annuler / déclencher l'onde Lumina).
-- **Capture** : clic maintenu (ou doigt) sur l'écran du bas, trace une boucle qui se referme.
+- **Déplacement** : `ZQSD` / flèches (D-pad sur mobile).
+- **A** : `Espace` / `Entrée` (parler, confirmer).
+- **B** : `Maj` / `Échap` (Album Lumina dans le hub, onde apaisante / ondée Fjordle en mission).
+- **Apaisement** : clic maintenu (ou doigt) sur l'écran du bas, trace une boucle complète autour de la créature.
+
+## Collection
+
+Chaque espèce apaisée pour la première fois est ajoutée à l'**Album Lumina**, accessible
+depuis le hub avec `B`. L'album affiche le portrait, la description, l'élément, et le **don
+de terrain** que la créature peut t'offrir si tu la croises à nouveau. Naviguer avec les flèches.
 
 ## Notes droits / copyright
 
